@@ -1,23 +1,19 @@
-# 1. 先忽略所有文件
-*
+# 忽略所有 IDE 配置文件
+.idea/
+*.iml
+.vscode/
 
-# 2. 但不要忽略文件夹本身（否则无法进入子目录寻找文件）
-!*/
+# 忽略编译生成的文件夹
+target/
+out/
+bin/
 
-# 3. 允许提交所有的 .xml 文件
-!*.xml
-
-# 4. 允许提交你的源代码文件（例如 Python 或 JS）
-!*.py
-!*.js
-!*.java
-
-# 5. 允许提交 .gitignore 本身和 README
-!.gitignore
-!README.md
-
-# 6. 忽略一些常见的系统垃圾或日志（可选）
-.DS_Store
+# 忽略日志和临时文件
 *.log
-node_modules/
-__pycache__/
+temp/
+
+# 允许 Git 看到的文件 (不要忽略这些)
+!pom.xml
+!*.java
+!*.xml
+!README.md
