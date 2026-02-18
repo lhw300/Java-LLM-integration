@@ -14,11 +14,11 @@ public class RealtimeAsr8k {
       throw new IllegalStateException("Please set OPENAI_API_KEY");
     }
 
-    // ÄãµÄ 8k A-law wav
-    String wavPath = "C:\\busy_simple.wav"; // TODO ¸ÄÕâÀï
+    // ä½ çš„ 8k A-law wav
+    String wavPath = "C:\\busy_simple.wav"; // TODO æ”¹è¿™é‡Œ
     WavG711 wav = readG711Wav(new File(wavPath));
 
-    // A-law ³£¼û audioFormat=6
+    // A-law å¸¸è§ audioFormat=6
     if (wav.audioFormat != 6) {
       throw new IllegalArgumentException("Not A-law WAV. audioFormat=" + wav.audioFormat + " (expected 6)");
     }
@@ -26,7 +26,7 @@ public class RealtimeAsr8k {
     if (wav.channels != 1) throw new IllegalArgumentException("WAV must be mono (1 channel).");
 
     OkHttpClient client = new OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS) // WS ³¤Á¬½Ó
+        .readTimeout(0, TimeUnit.MILLISECONDS) // WS é•¿è¿æ¥
         .build();
 
     Request request = new Request.Builder()
@@ -39,7 +39,7 @@ public class RealtimeAsr8k {
       public void onOpen(WebSocket webSocket, Response response) {
         System.out.println("WS opened");
 
-        // ×¢Òâ£ºÄ£ĞÍÃû±ØĞëÊÇ gpt-4o-transcribe£¨²»ÒªÆ´´í£©
+        // æ³¨æ„ï¼šæ¨¡å‹åå¿…é¡»æ˜¯ gpt-4o-transcribeï¼ˆä¸è¦æ‹¼é”™ï¼‰
         String sessionUpdate =
         	    "{"
         	        + "\"type\":\"session.update\","
@@ -63,14 +63,14 @@ public class RealtimeAsr8k {
 
         webSocket.send(sessionUpdate);
 
-        // ¿ªÒ»¸öÏß³Ì³ÖĞø¡°RTP-like¡±·¢Ö¡
+        // å¼€ä¸€ä¸ªçº¿ç¨‹æŒç»­â€œRTP-likeâ€å‘å¸§
         new Thread(() -> streamAlawFrames(webSocket, wav.data)).start();
       }
 
       @Override
       public void onMessage(WebSocket webSocket, String text) {
-        // ÕâÀï»áÊÕµ½¸÷ÖÖ server events£¨JSON£©
-        // ÖØµã¿´£º
+        // è¿™é‡Œä¼šæ”¶åˆ°å„ç§ server eventsï¼ˆJSONï¼‰
+        // é‡ç‚¹çœ‹ï¼š
         // - conversation.item.input_audio_transcription.delta
         // - conversation.item.input_audio_transcription.completed
         System.out.println(text);
@@ -97,14 +97,14 @@ public class RealtimeAsr8k {
       }
     });
 
-    // ·ÀÖ¹ main ÍË³ö£¨ÄãÒ²¿ÉÒÔ¸Ä³É¸üÓÅÑÅµÄ latch£©
+    // é˜²æ­¢ main é€€å‡ºï¼ˆä½ ä¹Ÿå¯ä»¥æ”¹æˆæ›´ä¼˜é›…çš„ latchï¼‰
     Thread.sleep(60_000);
     ws.close(1000, "bye");
     client.dispatcher().executorService().shutdown();
   }
 
-  // RTP-like£º20ms Ò»Ö¡
-  // 8kHz * 20ms = 160 samples£»G.711 Ã¿ sample 1 byte => 160 bytes/Ö¡
+  // RTP-likeï¼š20ms ä¸€å¸§
+  // 8kHz * 20ms = 160 samplesï¼›G.711 æ¯ sample 1 byte => 160 bytes/å¸§
   static void streamAlawFrames(WebSocket ws, byte[] alawData) {
     final int frameBytes = 160;
     final int sleepMs = 20;
@@ -128,19 +128,19 @@ System.out.println(" length "+ alawData.length);
       }
     }
 
-    // Èç¹ûÄãÏëÄ£Äâ Push-to-Talk£ºÒ»¶Î½áÊøÊ± commit
+    // å¦‚æœä½ æƒ³æ¨¡æ‹Ÿ Push-to-Talkï¼šä¸€æ®µç»“æŸæ—¶ commit
     // ws.send("{\"type\":\"input_audio_buffer.commit\"}");
 
     System.out.println("Audio stream finished.");
   }
 
-  // ---------------- WAV reader: G.711 A-law / ¦Ì-law ----------------
+  // ---------------- WAV reader: G.711 A-law / Î¼-law ----------------
 
   static class WavG711 {
     final int sampleRate;
     final int channels;
     final int bitsPerSample;
-    final int audioFormat; // 6=A-law, 7=¦Ì-law
+    final int audioFormat; // 6=A-law, 7=Î¼-law
     final byte[] data;
 
     WavG711(int sampleRate, int channels, int bitsPerSample, int audioFormat, byte[] data) {
@@ -153,7 +153,7 @@ System.out.println(" length "+ alawData.length);
   }
   static byte[] readFully(DataInputStream in, int len) throws IOException {
 	    byte[] buf = new byte[len];
-	    in.readFully(buf);   // Java 8 ÓĞ
+	    in.readFully(buf);   // Java 8 æœ‰
 	    return buf;
 	}
 
@@ -176,7 +176,7 @@ System.out.println(" length "+ alawData.length);
         int chunkSize = readLE32(in);
 
         if ("fmt ".equals(chunkId)) {
-          audioFormat = readLE16(in); // 6=A-law, 7=¦Ì-law
+          audioFormat = readLE16(in); // 6=A-law, 7=Î¼-law
           channels = readLE16(in);
           sampleRate = readLE32(in);
           readLE32(in); // byteRate
