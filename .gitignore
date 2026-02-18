@@ -1,19 +1,16 @@
-# 忽略所有 IDE 配置文件
-.idea/
-*.iml
-.vscode/
+# 1. 忽略所有文件和文件夹
+*
 
-# 忽略编译生成的文件夹
-target/
-out/
-bin/
+# 2. 允许目录结构（必须先允许目录，Git 才能进入子目录找文件）
+!*/
 
-# 忽略日志和临时文件
-*.log
-temp/
-
-# 允许 Git 看到的文件 (不要忽略这些)
-!pom.xml
+# 3. 明确允许的文件类型（白名单）
 !*.java
 !*.xml
+!pom.xml
 !README.md
+!.gitignore
+
+# 4. 排除掉虽然是 xml 但包含敏感信息的特定文件（可选）
+# 如果有包含 API Key 的配置文件，可以取消下面这行的注释
+# secret-config.xml
