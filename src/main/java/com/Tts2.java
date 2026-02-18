@@ -14,7 +14,11 @@ package com;
 	 * 2. 转换为 A-law
 	 */
 	public class Tts2 {
-	    /* test 4 */
+ 
+	    /* test 4 3*/
+ 
+ 
+ 
 	    private static final String API_KEY = System.getenv("OPENAI_API_KEY");
 	    private static final String URL = "https://api.openai.com/v1/audio/speech";
 	    private static final OkHttpClient client = new OkHttpClient();
