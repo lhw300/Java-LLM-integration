@@ -29,7 +29,7 @@ public class ChatExample2 {
         System.out.println("ai answer=" +re);
         long t2=System.currentTimeMillis();
         System.out.println("ask cost="+(t2-t1));
-        
+        /*
         
         
         ques="Do I need to study 775?short answer!";
@@ -56,6 +56,7 @@ public class ChatExample2 {
     System.out.println("ai answer=" +re);
       t2=System.currentTimeMillis();
     System.out.println("ask cost="+(t2-t1));
+    */
         /*
         String ques="what room for 735 at NYIT vancouver?";
         System.out.println("ai question=" +ques);
