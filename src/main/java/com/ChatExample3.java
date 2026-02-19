@@ -24,7 +24,7 @@ public class ChatExample3 {
         // ⚡ 步骤 1: 预热连接池（推荐）
         System.out.println("🔥 正在预热连接池...");
         try {
-            SessionManagerOptimized.warmUp();
+            SessionManager.warmUp();
         } catch (Exception e) {
             System.err.println("⚠️ 预热失败: " + e.getMessage());
         }
