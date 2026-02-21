@@ -8,14 +8,14 @@ import java.util.LinkedList;
 import java.util.List;
 
 public class ChatHistory {
-
+	int max_ask_history_to_ai=10;
     /**
      * 内部消息结构
      */
     public static class Message {
-        private String role;
+        private String role; /* user system assistant */
         private String content;
-
+        
         public Message(String role, String content) {
             this.role = role;
             this.content = content;
@@ -29,7 +29,9 @@ public class ChatHistory {
             return content;
         }
     }
-
+    public  ChatHistory(int size){
+    	max_ask_history_to_ai=size;
+    }
     private final LinkedList<Message> messages = new LinkedList<>();
 
     /**
@@ -74,7 +76,39 @@ public class ChatHistory {
             }
         }
     }
+    /**
+     * 转换为 Jackson ArrayNode，并使用滑动窗口限制发给大模型的上下文
+     * @param windowSize 限制发送给 LLM 的最近消息条数（例如 10 条，即最近 5 轮）
+     */
+    public ArrayNode toJsonArrayWithWindow( ) {
+    		int windowSize=max_ask_history_to_ai;
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode arrayNode = mapper.createArrayNode();
 
+        // 1. 始终强制保留 System Message (知识库和人设)
+        if (!messages.isEmpty() && "system".equalsIgnoreCase(messages.getFirst().getRole())) {
+            ObjectNode sysNode = mapper.createObjectNode();
+            sysNode.put("role", messages.getFirst().getRole());
+            sysNode.put("content", messages.getFirst().getContent());
+            arrayNode.add(sysNode);
+        }
+
+        // 2. 计算滑动窗口的起始点
+        int size = messages.size();
+        // 排除掉 system 消息后，从哪里开始截取
+        int startIndex = Math.max(1, size - windowSize); 
+
+        // 3. 只把最近的 windowSize 条消息加进去
+        for (int i = startIndex; i < size; i++) {
+            Message msg = messages.get(i);
+            ObjectNode node = mapper.createObjectNode();
+            node.put("role", msg.getRole());
+            node.put("content", msg.getContent());
+            arrayNode.add(node);
+        }
+
+        return arrayNode;
+    }
     /**
      * 转换为 Jackson ArrayNode
      */
