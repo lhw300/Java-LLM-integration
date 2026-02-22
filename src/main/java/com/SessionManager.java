@@ -42,78 +42,75 @@ import okhttp3.ConnectionPool;
 	    
 	    private static final String API_KEY = System.getenv("OPENAI_API_KEY");
 
-	    /**
-	     * ⚡ 核心改动：不再静态加载 knowledge.txt
-	     * 而是提供一个构建动态 System Message 的模板
-	     */
-		/*
-		 * public static String buildDynamicSystemMessage(String knowledgeContext) {
-		 * if(knowledgeContext==null) return null; return
-		 * "You are a helpful enterprise assistant.\n" +
-		 * "Use the following pieces of retrieved context to answer the question.\n" +
-		 * "If you don't know the answer, just say you don't know. Keep the answer concise.\n\n"
-		 * + "=== CONTEXT ===\n" + knowledgeContext + "\n" + "=== END CONTEXT ===\n"; }
-		 */
-
-	    /**
-	     * 获取会话。如果是新会话，先给一个基础的 System Message
-	     */
-		/*
-		 * public static ChatSessionOptimized getSession(String clientId) { return
-		 * sessions.computeIfAbsent(clientId, id -> new
-		 * ChatSessionOptimized("You are a helpful assistant.")); }
-		 */
-
-	    /**
-	     * ⚡ 新增：专门为 RAG 场景更新会话的 System Message
-	     */
-		/*
-		 * public static ChatSessionOptimized getSession(String clientId, String
-		 * knowledgeContext) {
-		 * 
-		 * String fullSystemMessage = buildDynamicSystemMessage(knowledgeContext);
-		 * 
-		 * ChatSessionOptimized session=null;
-		 * 
-		 * if(sessions.containsKey(clientId)) {
-		 * session=(ChatSessionOptimized)sessions.get(clientId);
-		 * 
-		 * }else { session = new ChatSessionOptimized( ); sessions.put(clientId,
-		 * session); } // 如果会话已存在，我们可以更新它的第一条 System 消息（根据 ChatSessionOptimized 的实现调整）
-		 * // 这里简单处理：如果知识变化，直接创建/覆盖新会话以保证知识最新 if(fullSystemMessage!=null)
-		 * session.setSystemMessage(fullSystemMessage);
-		 * 
-		 * 
-		 * return session; }
-		 */
-	    
-		/*
-		 * public static void setSystemMessage(ChatSessionOptimized session, String
-		 * knowledgeContext) { String fullSystemMessage =
-		 * buildDynamicSystemMessage(knowledgeContext); if(fullSystemMessage!=null)
-		 * session.setSystemMessage(fullSystemMessage); }
-		 */
-	    public static ChatSession getSession(String clientId ) {
-	    	
-	       //   String fullSystemMessage = buildDynamicSystemMessage(knowledgeContext);
-	          
-	    	ChatSession session=null;
-	          		
-	         if(sessions.containsKey(clientId)) {
-	        	 	  session=(ChatSession)sessions.get(clientId);
-	        	 	
-	         }else {
-	        		  session = new ChatSession( );
-	        		  sessions.put(clientId, session);
-	         }
-	        // 如果会话已存在，我们可以更新它的第一条 System 消息（根据 ChatSessionOptimized 的实现调整）
-	        // 这里简单处理：如果知识变化，直接创建/覆盖新会话以保证知识最新
-	    //    if(fullSystemMessage!=null)
-	        	//	session.setSystemMessage(fullSystemMessage);
+	 // 实例化一个具体的模型客户端 (比如上线用 OpenAI，本地测试换成 OllamaClient)
+ 
+	 // 分别声明两个接口能力
+	    private static LlmClient ACTIVE_LLM = null;
+	    private static EmbeddingClient ACTIVE_EMBED = null;
+	    private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
+	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
+	    public static void init(String type) {
+	        if (type == null) {
+	            throw new IllegalArgumentException("模型类型不能为空！");
+	        }
 	        
-	       
+	        if (type.equalsIgnoreCase("openai")) {
+	            System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
+	            OpenAIClient lccc = new OpenAIClient(
+	                System.getenv("OPENAI_API_KEY"), 
+	                "gpt-4o-mini", 
+	                "text-embedding-3-small", 
+	                CLIENT
+	            );
+	            
+	            
+	         // 将这个全能实例分别赋给两个接口变量
+	            ACTIVE_LLM = lccc;
+	            ACTIVE_EMBED = lccc;
+	            ACTIVE_TABLE = "enterprise_knowledge_1536"; // 👈 动态表名
+	            System.out.println("✅ OpenAI 模型客户端已挂载");
+	            
+	            
+	        } else if (type.equalsIgnoreCase("deepseek")) {
+	            // 预留给未来的 DeepSeek
+	            // ACTIVE_LLM = new DeepSeekClient("your_key", CLIENT);
+	            System.out.println("⚙️ 暂未完全实现 DeepSeek...");
+	        } 
+	        else if (type.equalsIgnoreCase("ollama")) {
+	            System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
+	            // Ollama 默认运行在 11434 端口
+	            OllamaClient ollamaClient = new OllamaClient(
+	                "http://localhost:11434/v1", // Ollama 的 OpenAI 兼容接口前缀
+	                "qwen2.5:1.5b",                     // 你的本地大语言模型名 (如果你拉的是 2.5，请改成 qwen2.5)
+	                "nomic-embed-text",          // 本地专用的向量模型
+	                CLIENT
+	            );
+	            ACTIVE_LLM = ollamaClient;
+	            ACTIVE_EMBED = ollamaClient;
+	            ACTIVE_TABLE = "enterprise_knowledge_768";  // 👈 动态表名
+	        }
+	        
+	        else {
+	            throw new IllegalArgumentException("不支持的大模型类型: " + type);
+	        }
+	    }
+
+	    public static ChatSession getSession(String clientId) {
+	        // 🌟 增加一道安全防线：防止忘记调用 init()
+	        if (ACTIVE_LLM == null) {
+	            throw new IllegalStateException("大模型客户端尚未初始化！请先调用 SessionManager.init(\"openai\")");
+	        }
+
+	        ChatSession session = null;
+	        if(sessions.containsKey(clientId)) {
+	             session = sessions.get(clientId);
+	        } else {
+	             session = new ChatSession(ACTIVE_LLM, ACTIVE_EMBED, ACTIVE_TABLE);
+	             sessions.put(clientId, session);
+	        }
 	        return session;
 	    }
+ 
 	    public static   String sendToOpenAI(ChatHistory history) throws Exception {
 	        // 创建请求 JSON
 	        ObjectNode rootNode = MAPPER.createObjectNode();
@@ -229,16 +226,19 @@ import okhttp3.ConnectionPool;
         ObjectMapper mapper = new ObjectMapper();
         com.fasterxml.jackson.databind.node.ObjectNode testNode = mapper.createObjectNode();
         testNode.put("model", "gpt-4o-mini");
-        testNode.put("max_output_tokens", 50); // 修改：最小值必须 >= 16
+        testNode.put("max_tokens", 50); // 修改：最小值必须 >= 16
         
-        com.fasterxml.jackson.databind.node.ArrayNode inputArray = testNode.putArray("input");
-        com.fasterxml.jackson.databind.node.ObjectNode msgNode = inputArray.addObject();
+  
+        
+        
+        
+        testNode.put("model", "gpt-4o-mini");
+        testNode.put("max_tokens", 50);
+        ArrayNode messagesArray = testNode.putArray("messages");
+        ObjectNode msgNode = messagesArray.addObject();
         msgNode.put("role", "user");
+        msgNode.put("content", "Hi");
         
-        com.fasterxml.jackson.databind.node.ArrayNode contentArray = msgNode.putArray("content");
-        com.fasterxml.jackson.databind.node.ObjectNode contentItem = contentArray.addObject();
-        contentItem.put("type", "input_text");
-        contentItem.put("text", "Hi");
         
         String testJson = mapper.writeValueAsString(testNode);
         
