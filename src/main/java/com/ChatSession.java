@@ -1,18 +1,56 @@
 package com;
-
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-
+import java.util.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.Comparator; // 排序也需要这个
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+/*
+ * 1. ask() 函数：智能 Agent (Function Calling) 模式
+此函数将 AI 视为一个具备决策能力的 智能体。它不直接检索数据库，而是先询问 AI 是否需要外部工具的支持。
 
+核心逻辑：
+
+意图判定：首先调用大模型，并在请求中注入工具（Tools）定义。
+
+参数提取：AI 如果认为需要查库，会返回 TOOL_CALL: 信号，并精准提取结构化参数（如目的地 country 和国籍 citizenship）。
+
+多维精准检索：Java 拦截信号后，利用提取的参数在向量数据库中进行多次精准匹配。
+
+去重与排序：使用 LinkedHashSet 过滤重复知识条目，并按相似度距离（Distance）从小到大排序，确保最相关的知识排在最前面。
+
+二次总结：将检索到的原始知识反馈给 AI，由 AI 进行逻辑推理并生成最终的人性化回答。
+
+适用场景：适用于需要精准参数提取的业务咨询（如：签证政策查询、特定产品参数比对）。
+
+2. ask2() 函数：传统 RAG (语义搜索) 模式
+此函数采用标准的 检索增强生成（RAG） 流程，是一个线性的、预设好的处理链路。
+
+核心逻辑：
+
+查询重写：结合历史对话背景，将用户的模糊提问重写为语义丰富的 optimizedQuery。
+
+盲目检索（Retrieve）：不论问题性质，直接将重写后的整句长文本转化为向量，在数据库中进行模糊语义搜索。
+
+相似度过滤：设置了严格的相似度阈值（SIMILARITY_THRESHOLD），如果匹配度不足则直接报错。
+
+直接生成：将检索到的上下文通过 setSystemMessage 注入，由 AI 根据这些参考资料生成回答。
+
+适用场景：适用于开放式问答、知识库百科或不需要精确参数提取的泛闲聊场景。
+ */
 public class ChatSession {
 	private static final int MAX_HISTORY = 60;
 	private static final int MAX_QUERY_HISTORY = 16;
@@ -25,14 +63,15 @@ public class ChatSession {
 	private ChatHistory history = new ChatHistory(MAX_ASK_HISTORY);
 	QueryHistory queryHistory = new QueryHistory();
 	private String systemMessage = "";
-	ChatAnswer ca = new ChatAnswer();
+	ChatAnswer ca = new ChatAnswer(-1,null);
 	// 🌟 核心：引入抽象的大模型客户端，而不是写死的 SessionManager 调用
 	private final LlmClient llmClient;
 	private final String tableName; // 🌟 新增表名属性
 	private final EmbeddingClient embeddingClient; // ✅ 新增：专门负责向量化的接口
 	String rewrite_prompt = null;
 	String ask_prompt = null;
-
+    // 1. 在类成员变量处增加线程池定义
+    private static final ExecutorService rerankExecutor = Executors.newFixedThreadPool(8);
 	// 🌟 规范修改：构造函数要求外部把两个能力分别传进来
 	public ChatSession(LlmClient llmClient, EmbeddingClient embeddingClient, String tableName) {
         this.llmClient = llmClient;
@@ -65,8 +104,142 @@ public class ChatSession {
 		history.trim(MAX_HISTORY);
 		// trimHistory();
 	}
-
 	public ChatAnswer ask(String text) {
+	    System.out.println("✅ Agent-mode ask AI (Function Calling)...");
+	    if (text == null || text.isEmpty()) {
+	        ca.code = -1; ca.answer = "客户问题为空"; return ca;
+	    }
+	    if (text.length() > MAX_MESSAGE_LENGTH) text = text.substring(0, MAX_MESSAGE_LENGTH);
+
+	    try {
+	        // --- 步骤 1: Rewrite (重写用户意图) ---
+	        String optimizedQuery = text;
+	        String historyContextStr = queryHistory.getMessageWindowSize(MAX_QUERY_HISTORY);
+	        if (!historyContextStr.trim().isEmpty() && rewrite_prompt != null) {
+	            System.out.println("🔄 正在重写用户查询...");
+	            String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
+	            String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
+	            if (rewritten != null && !rewritten.isEmpty()) {
+	            	optimizedQuery = rewritten;
+	            }
+	            System.out.println("🔄 正在重写结果:"+optimizedQuery);
+	        }
+
+	        // --- 步骤 2: 意图判定 (第一次调用 AI) ---
+	        // 此时 history 中存入优化后的问题
+	        history.addMessage("user", optimizedQuery);
+	        
+	        System.out.println("✅ 发送意图判定请求 (带 Tools 定义)...");
+	        // llmClient.chat 内部会注入 tools 定义
+	        String firstResponse = llmClient.chat(history.toJsonArray());
+	        if (firstResponse.startsWith("TOOL_CALL:")) {
+	            String jsonStr = firstResponse.substring(10);
+	            JsonNode toolCallNode = MAPPER.readTree(jsonStr);
+	            String callId = toolCallNode.path("id").asText(); // 获取 call_id
+	            
+	            Map<String, String> args = parseArgsFromAiResponse(firstResponse);
+	            String country = args.get("country");
+	            String citizenship = args.get("citizenship");
+	            if(!country.isEmpty() ){
+	            	
+	            	// 🌟 核心改进：执行多维度检索
+	            	// 🌟 改进 2：使用 LinkedHashSet 保证条目唯一性且保留插入顺序
+	                Set<SearchService.KnowledgeItem> uniqueItems = new LinkedHashSet<>();
+	                
+	                // 1. 查目的地的通用政策（如 144小时免签）
+	                uniqueItems.addAll(SearchService.getRelevantKnowledge(tableName, country, embeddingClient));
+	                
+	                // 2. 如果有国籍，查针对该国籍的特殊政策（如 15天单方面免签）
+	                if (!citizenship.isEmpty()) {
+	                    System.out.println("🔍 正在追加国籍检索: " + citizenship);
+	                    uniqueItems.addAll(SearchService.getRelevantKnowledge(tableName, citizenship, embeddingClient));
+	                }
+	                
+	                
+	             // 🌟 改进 3：将 Set 转回 List 并按相似度距离排序 (确保最相关的在前)
+	                List<SearchService.KnowledgeItem> sortedItems = new ArrayList<>(uniqueItems);
+	                sortedItems.sort(Comparator.comparingDouble(item -> item.distance));
+
+	                // 🌟 改进 4：拼接前 N 条内容 (防止上下文爆炸，例如取 Top 5)
+	                StringBuilder contextSb = new StringBuilder();
+	                int limit = Math.min(5, sortedItems.size()); 
+	                for (int i = 0; i < limit; i++) {
+	                    contextSb.append(sortedItems.get(i).content).append("\n");
+	                }
+	                String toolKnowledge = sortedItems.isEmpty() ? "抱歉，知识库中没有查到关于 " + country + " 的政策。" : contextSb.toString();
+	                // 3. 构造完整消息链反馈给 AI
+	                // 必须包含：User 问题 -> Assistant(TOOL_CALL) -> Tool(执行结果)
+	                ArrayNode conversationContext = history.toJsonArray();
+	                
+	                // 添加 AI 刚才发出的 Tool Call 指令 (这一步非常重要，否则 context 不完整)
+	                ObjectNode assistantMsg = MAPPER.createObjectNode();
+	                assistantMsg.put("role", "assistant");
+	                assistantMsg.set("tool_calls", MAPPER.createArrayNode().add(toolCallNode));
+	                conversationContext.add(assistantMsg);
+
+	                // 添加 Tool 的执行结果反馈
+	                ObjectNode toolResultMsg = MAPPER.createObjectNode();
+	                toolResultMsg.put("role", "tool");
+	                toolResultMsg.put("tool_call_id", callId);
+	                toolResultMsg.put("content", toolKnowledge);
+	                System.out.println("最终contenct : " + toolKnowledge); 
+	                conversationContext.add(toolResultMsg);
+
+	                // 4. 第二次调用 AI：生成最终的人类语言回答
+	                System.out.println("💬 AI 正在根据工具结果生成最终回复...");
+	                String finalAnswer = llmClient.chat(conversationContext);
+	                
+	                // 更新记录
+	                queryHistory.addMessage("User", text);
+	                queryHistory.addMessage("Context", sortedItems.isEmpty() ? "无检索结果" :  contextSb.toString());
+	                
+	                ca.answer = finalAnswer;
+	            	
+	            } else {
+	                ca.answer = "提取参数失败，请明确您要查询的国家。";
+	            }
+	           
+	       
+	        	
+	        } else {
+	            // 如果 AI 没有调用工具，直接作为普通回答
+	            ca.answer = firstResponse;
+	            queryHistory.addMessage("User", text);
+	            queryHistory.addMessage("Context", "【通用对话】");
+	        }
+
+	        // --- 步骤 4: 结果存档 ---
+	        if (ca.answer != null && !ca.answer.isEmpty()) {
+	            history.addMessage("assistant", ca.answer);
+	            history.trim(MAX_HISTORY);
+	        }
+	        ca.code = 0;
+	        return ca;
+
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        ca.code = -1; ca.answer = "机器人系统故障: " + e.getMessage();
+	        return ca;
+	    }
+	}
+
+ 
+	private Map<String, String> parseArgsFromAiResponse(String answer) {
+	    Map<String, String> args = new HashMap<>();
+	    try {
+	        String jsonStr = answer.substring(10);
+	        JsonNode root = MAPPER.readTree(jsonStr);
+	        String argsStr = root.path("function").path("arguments").asText();
+	        JsonNode argsNode = MAPPER.readTree(argsStr);
+	        
+	        args.put("country", argsNode.path("country").asText(""));
+	        args.put("citizenship", argsNode.path("citizenship").asText(""));
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	    }
+	    return args;
+	}
+	public ChatAnswer ask2(String text) {
 		System.out.println("✅ ask AI...");
 		// 提前验证和处理输入
 		if (text == null || text.isEmpty()) {
@@ -113,117 +286,109 @@ public class ChatSession {
 				}
 			}
 
-			// ==========================================
-			// 步骤 2: Retrieve - 使用 OptimizedQuery 搜索匹配知识库
-			// ==========================================
-			System.out.println("🔍 使用优化后的问题检索知识库...");
-			List<SearchService.KnowledgeItem> items = SearchService.getRelevantKnowledge(tableName,optimizedQuery,
-					embeddingClient);
-			System.out.println("✅ 找到匹配项: " + items.size());
+            // ==========================================
+            // 步骤 2: Retrieve - 两阶段检索 (向量海选 + Qwen 精排)
+            // ==========================================
 
-			if (items.isEmpty()) {
-				System.out.println("⚠️ 知识库中没有找到任何内容");
-				ca.code = -2;
-				ca.answer = "知识库中没有找到任何内容";
+            // 2.1 粗排 (Coarse Ranking): 从数据库召回较多候选条目
+            System.out.println("🔍 阶段一：向量检索海选候选知识 (召回数量建议 15)...");
+            List<SearchService.KnowledgeItem> candidates = SearchService.getRelevantKnowledge(tableName, optimizedQuery, embeddingClient);
 
-				// 🌟 新增：即使没查到，也要把用户的实体和意图记录下来
-				queryHistory.addMessage("User", text);
-				queryHistory.addMessage("Context", "【未匹配到相关知识】");
-				queryHistory.trim(MAX_HISTORY);
+            if (candidates.isEmpty()) {
+                System.out.println("⚠️ 向量检索未找到任何匹配内容");
+                return handleEmptyResult(text, ca);
+            }
+            // 打印每一行结果
+            System.out.println("🔍 检索到的候选列表:");
+            candidates.forEach(item ->
+                    System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+            );
+            // 2.2 精排 (Fine Ranking/Rerank): 使用本地 Qwen 模型进行语义匹配打分
+            System.out.println("🎯 阶段二：使用本地 Qwen 进行 Rerank 精排...");
+            long rerankStart = System.currentTimeMillis();
 
-				// 🌟 新增：聊天历史也要记录，保证多轮对话的完整性
-				history.addMessage("user", text);
-				history.addMessage("assistant", "抱歉，知识库中没有找到任何内容。");
-				history.trim(MAX_HISTORY);
+            for (SearchService.KnowledgeItem item : candidates) {
+                // 构造精准评分 Prompt，利用 Qwen 的推理能力
+                String rerankSys = "你是一个文档匹配专家。判断【知识内容】能否回答【用户问题】。只输出一个 0.0 到 1.0 的分数，1.0 代表最相关，不要输出任何多余解释。";
+                String rerankUser = "【用户问题】：" + optimizedQuery + "\n【知识内容】：" + item.content;
 
-				return ca;
-			}
+                try {
+                    String scoreRaw = llmClient.generate(rerankSys, rerankUser).trim();
+                    // 过滤非数字字符，只提取分数
+                    //double score = Double.parseDouble(scoreRaw.replaceAll("[^0-9.]", ""));
+ // 仅提取第一个出现的数字或浮点数
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(\\.\\d+)?)").matcher(scoreRaw);
+                    if (m.find()) {
+                        double score = Double.parseDouble(m.group(1));
+                        item.distance = 1.0 - Math.min(score, 1.0); // 确保分数不溢出
+                    } else {
+                        item.distance = 1.0;
+                    }
+                    // 转换回 distance 逻辑 (1-score)，方便统一排序
+                  //  item.distance = 1.0 - score;
+                } catch (Exception e) {
+                    item.distance = 1.0; // 打分失败默认排到最后
+                }
+            }
 
-			double bestDistance = items.get(0).distance;
-			System.out.println("📊 最佳匹配距离: " + String.format("%.4f", bestDistance));
+            // 按精排得分重新排序 (距离越小越靠前)
+            candidates.sort(Comparator.comparingDouble(a -> a.distance));
+            System.out.println("⏱️ Rerank 总耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
 
-			if (bestDistance > SIMILARITY_THRESHOLD) {
-				System.out.println("⚠️ 相似度不足 (阈值: " + SIMILARITY_THRESHOLD + ")");
-				ca.code = -100;
-				ca.answer = "抱歉，我在知识库中未找到与您问题完全相关的信息,您可以尝试: 换一种方式描述您的问题";
-				// 🌟 新增：记录低相似度的废弃查询
-				queryHistory.addMessage("User", text);
-				queryHistory.addMessage("Context", "【未匹配到相关知识】");
-				queryHistory.trim(MAX_HISTORY);
+            // 2.3 截取最终结果并验证相似度阈值
+            List<SearchService.KnowledgeItem> finalItems = candidates.subList(0, Math.min(3, candidates.size()));
+            double bestDistance = finalItems.get(0).distance;
+            System.out.println("📊 精排后最佳相似度距离: " + String.format("%.4f", bestDistance));
 
-				// 🌟 新增：聊天历史也要记录
-				history.addMessage("user", text);
-				history.addMessage("assistant", "抱歉，我在知识库中未找到与您问题完全相关的信息,您可以尝试: 换一种方式描述您的问题");
-				history.trim(MAX_HISTORY);
+            if (bestDistance > SIMILARITY_THRESHOLD) {
+                System.out.println("⚠️ Rerank 结果相似度不足 (阈值: " + SIMILARITY_THRESHOLD + ")");
+                return handleLowSimilarity(text, ca);
+            }
 
-				return ca;
-			}
 
-			// 构建匹配到的知识库上下文
-			StringBuilder contextBuilder = new StringBuilder();
-			// 分别构建【完整知识】和【摘要知识】
-			StringBuilder fullContextBuilder = new StringBuilder();
-			StringBuilder summaryContextBuilder = new StringBuilder();
+            // ==========================================
+            // 步骤 3: Construct & Chat - 构建上下文并生成回答
+            // ==========================================
+            StringBuilder fullContextBuilder = new StringBuilder();
+            StringBuilder summaryContextBuilder = new StringBuilder();
 
-			for (int i = 0; i < items.size(); i++) {
-				SearchService.KnowledgeItem item = items.get(i);
+            for (int i = 0; i < finalItems.size(); i++) {
+                SearchService.KnowledgeItem item = finalItems.get(i);
+                fullContextBuilder.append(String.format("%d. 【%s】%s\n", i + 1, item.summary, item.content));
+                summaryContextBuilder.append(String.format("%d. %s\n", i + 1, item.summary));
+            }
 
-				// 拼接给大模型看的完整内容（加上摘要作为标题）
-	            fullContextBuilder.append(String.format("%d. 【%s】%s\n", i + 1, item.summary, item.content));
-	            
-	            // 拼接存入历史记录的精简摘要
-	            summaryContextBuilder.append(String.format("%d. %s\n", i + 1, item.summary));
-			}
-			String matchedFullContext = fullContextBuilder.toString();
-			String matchedSummaryContext = summaryContextBuilder.toString();
+            String matchedFullContext = fullContextBuilder.toString();
+            String matchedSummaryContext = summaryContextBuilder.toString();
 
-			System.out.println("📚 检索到的完整知识:\n" + matchedFullContext);
-			System.out.println("📝 提取的摘要知识(用于下一轮重写):\n" + matchedSummaryContext);
+            // 更新历史记录 (记录摘要以节省 Token)
+            queryHistory.addMessage("User", text);
+            queryHistory.addMessage("Context", matchedSummaryContext);
+            queryHistory.trim(MAX_HISTORY);
 
-			// 🌟 核心修改：记录到 QueryHistory 中的是【摘要】而不是完整内容
-			queryHistory.addMessage("User", text);
-			// 🌟 终极杀招：存入“优化后的标准问句”，让实体（如美国护照）在历史中彻底显性化！
-			// queryHistory.addMessage("User", optimizedQuery);
-			queryHistory.addMessage("Context", matchedSummaryContext);
-			queryHistory.trim(MAX_HISTORY);
+            // 设置系统提示词，注入检索到的知识
+            setSystemMessage(matchedFullContext);
+            history.addMessage("user", optimizedQuery);
+            history.trim(MAX_HISTORY);
 
-			// ==========================================
-			// 步骤 3: Construct - 发给 AI 生成最终回答
-			// ==========================================
-			System.out.println("✅ 正在构建最终 Prompt 发送给 AI...");
+            // 调用 AI 生成最终答案
+            long chatStart = System.currentTimeMillis();
+            String answer = llmClient.chat(history.toJsonArray());
+            System.out.println("⏱️ 最终答案生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
 
-			// 🌟 这里必须传完整内容，因为用户需要看详细的知识解答
-			setSystemMessage(matchedFullContext);
+            if (answer != null && !answer.isEmpty()) {
+                if (answer.length() > MAX_MESSAGE_LENGTH) {
+                    answer = answer.substring(0, MAX_MESSAGE_LENGTH);
+                }
+                history.addMessage("assistant", answer);
+                history.trim(MAX_HISTORY);
+            }
 
-			// 2. 将当前优化后的问题追加到 History (历史的 User 和 AI 回答已经在里面了)
-			history.addMessage("user", optimizedQuery);
-			history.trim(MAX_HISTORY);
+            ca.code = 0;
+            ca.answer = answer;
+            return ca;
 
-			// 发送到 OpenAI 生成最终回答
-			// String answer = SessionManager.sendToOpenAI(history);
-			// 🌟 改动点：调用接口的 chat 方法获取回答
-			// Start the timer
-			long startTime = System.currentTimeMillis();
 
-			// 🌟 Call the chat method to get the answer
-			String answer = llmClient.chat(history.toJsonArray());
-
-			// End the timer and print the duration
-			long endTime = System.currentTimeMillis();
-			System.out.println("⏱️ AI Generation Time: " + (endTime - startTime) + " ms");
-
-			// 将 AI 回答添加到 ChatHistory 中
-			if (answer != null && !answer.isEmpty()) {
-				if (answer.length() > MAX_MESSAGE_LENGTH) {
-					answer = answer.substring(0, MAX_MESSAGE_LENGTH);
-				}
-				history.addMessage("assistant", answer);
-				history.trim(MAX_HISTORY);
-			}
-
-			ca.code = 0;
-			ca.answer = answer;
-			return ca;
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -232,6 +397,241 @@ public class ChatSession {
 			return ca;
 		}
 	}
+    /**
+     * 辅助方法：处理空结果
+     */
+    private ChatAnswer handleEmptyResult(String text, ChatAnswer ca) {
+        ca.code = -100;
+        ca.answer = "知识库中没有找到任何内容";
+        recordHistory(text, "【未匹配到相关知识】", "抱歉，知识库中没有找到任何内容。");
+        return ca;
+    }
+
+    /**
+     * 辅助方法：处理低相似度
+     */
+    private ChatAnswer handleLowSimilarity(String text, ChatAnswer ca) {
+        ca.code = -101;
+        ca.answer = "抱歉，我在知识库中未找到与您问题完全相关的信息。";
+        // 即使失败，也要在 queryHistory 中记录一次，保持上下文连贯
+        queryHistory.addMessage("User", text);
+        queryHistory.addMessage("Context", "【未匹配到相关知识】");
+        queryHistory.trim(MAX_QUERY_HISTORY);
+        return ca;
+    }
+
+    /**
+     * 统一记录历史记录
+     */
+    private void recordHistory(String userText, String contextText, String assistantText) {
+        queryHistory.addMessage("User", userText);
+        queryHistory.addMessage("Context", contextText);
+        queryHistory.trim(MAX_HISTORY);
+        history.addMessage("user", userText);
+        history.addMessage("assistant", assistantText);
+        history.trim(MAX_HISTORY);
+    }
+
+
+    public ChatAnswer ask3(String text) {
+        System.out.println("🚀 执行高级 RAG 流程 (重构版 ask3)...");
+        ChatAnswer ca = new ChatAnswer(-1,null);
+
+        // 1. 预处理：合法性检查与长度截断
+        // 修复校验逻辑
+        if (text == null || text.trim().isEmpty()) {
+            ca.code = -1; ca.answer = "客户问题为空"; return ca;
+        }
+        String processedText = (text.length() > MAX_MESSAGE_LENGTH) ? text.substring(0, MAX_MESSAGE_LENGTH) : text;
+
+        try {
+            // 步骤 1: Rewrite - 结合历史上下文生成优化查询
+            String optimizedQuery = performQueryRewrite(processedText);
+
+            // 步骤 2: Retrieve - 两阶段检索（粗排 + 本地 Qwen 精排）
+            List<SearchService.KnowledgeItem> finalItems = performTwoStageRetrievalAsync(optimizedQuery);
+
+            System.out.println("🔍 检索到的候选列表 after Retrieve - 两阶段检索:");
+            finalItems.forEach(item ->
+                    System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+            );
+            // 步骤 3: Validate - 结果校验与拦截
+            if (finalItems.isEmpty()) return handleEmptyResult(processedText, ca);
+            if (finalItems.get(0).distance > SIMILARITY_THRESHOLD) return handleLowSimilarity(processedText, ca);
+
+            // 4. 构建上下文
+            StringBuilder fullCtx = new StringBuilder();
+            for (int i = 0; i < finalItems.size(); i++) {
+                fullCtx.append(String.format("%d. 【%s】%s\n", i + 1, finalItems.get(i).summary, finalItems.get(i).content));
+            }
+
+            // 🌟 5. 核心：执行封装好的动作
+            // 记录摘要历史（用于下一轮重写）
+            recordQueryHistory(processedText, finalItems);
+
+            // 执行 AI 生成答案（用于当前回答）
+            String ans = executeFinalChat(fullCtx.toString(), optimizedQuery);
+            if(ans!=null) {
+                ca.answer = ans;
+                ca.code = 0;
+            }else{
+                ca.code = -500;
+                ca.answer = "AI 响应为空，请稍后重试。";
+            }
+            return ca;
+        } catch (Exception e) {
+            e.printStackTrace();
+            ca.code = -1;
+            ca.answer = "机器人系统故障";
+            return ca;
+        }
+    }
+    //查询重写逻辑 (Rewrite)
+    private String performQueryRewrite(String text) throws Exception {
+        String historyContextStr = queryHistory.getMessageWindowSize(MAX_QUERY_HISTORY);
+        if (historyContextStr.trim().isEmpty() || rewrite_prompt == null) return text;
+
+        System.out.println("🔄 正在利用上下文重写用户查询...");
+        String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
+
+        long startTime = System.currentTimeMillis();
+        String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
+        System.out.println("⏱️ AI rewritten Time: " + (System.currentTimeMillis() - startTime) + " ms");
+
+        return (rewritten != null && !rewritten.isEmpty()) ? rewritten : text;
+    }
+    //两阶段检索引擎 (Retrieval & Rerank)
+    private List<SearchService.KnowledgeItem> performTwoStageRetrieval(String query) throws Exception {
+        // 阶段一：粗排（向量检索，建议 limit=15）
+        List<SearchService.KnowledgeItem> candidates = SearchService.getRelevantKnowledge(tableName, query, embeddingClient);
+        if (candidates.isEmpty()) return candidates;
+
+        // 阶段二：本地精排（Ollama + Qwen 打分）
+        System.out.println("🎯 正在执行本地 Qwen 精排 (Rerank)...");
+        long rerankStart = System.currentTimeMillis();
+
+        for (SearchService.KnowledgeItem item : candidates) {
+            item.distance = calculateSemanticDistance(query, item.content);
+        }
+
+        // 按精排得分重新排序
+        candidates.sort(Comparator.comparingDouble(a -> a.distance));
+        System.out.println("⏱️ Rerank 总耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
+
+        return candidates.subList(0, Math.min(3, candidates.size()));
+    }
+
+    // 独立的语义距离计算逻辑
+    private double calculateSemanticDistance(String query, String content) {
+        String rerankSys = "你是一个文档匹配专家。判断【内容】能否回答【问题】。只输出一个 0.0 到 1.0 的分数，1.0代表最相关，不要输出任何多余解释。";
+        String rerankUser = "【问题】：" + query + "\n【内容】：" + content;
+        try {
+            String scoreRaw = llmClient.generate(rerankSys, rerankUser).trim();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(\\.\\d+)?)").matcher(scoreRaw);
+            if (m.find()) {
+                double score = Double.parseDouble(m.group(1));
+                double re= 1.0 - Math.min(score, 1.0); // 映射到 distance 逻辑
+                System.out.println("⏱️ Rerank score="+re+" content="+content.substring(0,20)  );
+                return re;
+            }
+        } catch (Exception e) {
+            System.out.println("⏱️ Rerank "+e);
+        }
+        return 1.0; // 默认不相关
+    }
+    private List<SearchService.KnowledgeItem> performTwoStageRetrievalAsync(String query) throws Exception {
+        // 1. 粗排：从数据库获取 15 条候选
+        List<SearchService.KnowledgeItem> candidates = SearchService.getRelevantKnowledge(tableName, query, embeddingClient);
+        // 打印每一行结果
+        System.out.println("🔍 检索到的候选列表getRelevantKnowledge:");
+        candidates.forEach(item ->
+                System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+        );
+        if (candidates.isEmpty()) return candidates;
+
+        System.out.println("🎯 开始并行精排 (For 循环异步版)...");
+        long rerankStart = System.currentTimeMillis();
+
+        // 2. 创建一个列表，用来存放所有的“考试回执单” (Futures)
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        // 3. 使用你熟悉的 for 循环分发任务
+        for (SearchService.KnowledgeItem item : candidates) {
+            // 为每一条知识创建一个异步任务
+            CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
+                // 这个代码块会在线程池的某个子线程里偷偷运行
+                item.distance = calculateSemanticDistance(query, item.content);
+            }, rerankExecutor);
+
+            // 把任务单存起来，方便后面统一检查是否都做完了
+            futures.add(task);
+        }
+
+        try {
+            // 4. 指挥官在这里坐镇，等待所有“回执单”都打上“已完成”的印章
+            // 设置 5 秒硬性超时，防止某个任务卡死导致整个请求挂起
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(5, TimeUnit.SECONDS);
+
+            // 5. 只有所有人都打完分了，才进行重新排序
+            candidates.sort(Comparator.comparingDouble(a -> a.distance));
+            System.out.println("⏱️ 并行 Rerank 成功，耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
+
+        } catch (TimeoutException e) {
+            // ⚡ 降级逻辑：如果 5 秒还没跑完，就不等了，直接用数据库原本的顺序
+            System.err.println("⚠️ Rerank 超时，执行降级方案：使用向量原始排序。");
+        }
+
+        // 6. 无论有没有精排成功，最终都只取前 3 条
+        return candidates.subList(0, Math.min(3, candidates.size()));
+    }
+    /**
+     * 动作 1：记录重写历史 (仅限 queryHistory)
+     */
+// 确认你的 recordQueryHistory 是这样的：
+    private void recordQueryHistory(String rawText, List<SearchService.KnowledgeItem> items) {
+        StringBuilder sumCtx = new StringBuilder();
+        for (SearchService.KnowledgeItem item : items) {
+            if (item.summary != null && !item.summary.isEmpty()) {
+                // 这里可以根据需要加 【】 符号辅助 Prompt 识别
+                sumCtx.append("【").append(item.summary).append("】 ");
+            }
+        }
+        queryHistory.addMessage("User", rawText);
+        queryHistory.addMessage("Context", sumCtx.toString().trim());
+        queryHistory.trim(MAX_QUERY_HISTORY);
+    }
+
+    /**
+     * 动作 2：执行最终对话并处理存档 (替换原 generateFinalAnswer 的核心部分)
+     */
+    private String executeFinalChat(String fullContext, String optimizedQuery) throws Exception {
+
+        // 1. 设置系统提示词（注入全文知识）
+        setSystemMessage(fullContext);
+        history.addMessage("user", optimizedQuery);
+        history.trim(MAX_HISTORY);
+
+        // 2. 调用 LLM
+        long chatStart = System.currentTimeMillis();
+        String answer = llmClient.chat(history.toJsonArray());
+        System.out.println("⏱️ 最终答案生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
+
+        // 3. 安全截断并存入对话历史 (history)
+        if (answer != null && !answer.isEmpty()) {
+            if (answer.length() > MAX_MESSAGE_LENGTH) {
+                answer = answer.substring(0, MAX_MESSAGE_LENGTH);
+            }
+            history.addMessage("assistant", answer);
+            history.trim(MAX_HISTORY);
+        }
+        return answer;
+    }
+
+	/**
+	 * 🌟 新增：解析 AI 提取的工具参数
+	 * 预期格式：TOOL_CALL:{"id":"...","function":{"name":"query_visa_policy","arguments":"{\"country\":\"法国\"}"}}
+	 */
 
 	/*
 	 * public ChatAnswer ask2(String text) { System.out.println("✅ ask AI..."); //

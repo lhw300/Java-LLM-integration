@@ -21,4 +21,5 @@ public interface LlmClient {
      * @return 大模型的文本回复
      */
     String generate(String systemPrompt, String userPrompt) throws Exception;
+
 }

@@ -29,15 +29,85 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         root.put("model", this.chatModel);
         root.put("temperature", 0.0);
         root.set("messages", messages);
+        /* 
+         * // 🌟 新增：注入签证工具定义
+    ArrayNode tools = mapper.createArrayNode();
+    ObjectNode tool = tools.addObject();
+    tool.put("type", "function");
+    ObjectNode function = tool.putObject("function");
+    function.put("name", "query_visa_policy");
+    function.put("description", "查询特定国家的签证政策");
+    ObjectNode parameters = function.putObject("parameters");
+    parameters.put("type", "object");
+    ObjectNode props = parameters.putObject("properties");
+    props.putObject("country").put("type", "string").put("description", "目的地国家");
+    // ... 保持简练，按需添加 required
+    root.set("tools", tools);
+         */
+        String toolsJson2 = """
+                [
+                  {
+                    "type": "function",
+                    "function": {
+                      "name": "query_visa_policy",
+                      "description": "当用户咨询签证政策、免签条件或特定国家入境要求时调用此函数。",
+                      "parameters": {
+                        "type": "object",
+                        "properties": {
+                          "country": { "type": "string", "description": "目的地国家名称" }
+                        },
+                        "required": ["country"]
+                      }
+                    }
+                  }
+                ]
+                """;
+
+        String toolsJson = """
+                [
+                  {
+                    "type": "function",
+                    "function": {
+                      "name": "query_visa_policy",
+                      "description": "当用户咨询签证政策时调用。需提取目的地和申请人国籍。",
+                      "parameters": {
+                        "type": "object",
+                        "properties": {
+                          "country": { "type": "string", "description": "目的地国家名称" },
+                          "citizenship": { "type": "string", "description": "申请人的国籍或护照签发国" }
+                        },
+                        "required": ["country"] 
+                      }
+                    }
+                  }
+                ]
+                """;
+        
+        	// 直接解析成 JsonNode 并注入 root
+        	root.set("tools", mapper.readTree(toolsJson));
+        	 System.out.println("✅ 发送sendRequest..."+root.toString());
+        String res= sendRequest(baseUrl + "/chat/completions", root);
+       // System.out.println("✅ 收到应答   res="+res);
+        return res;
+    }
+    public String chat2(ArrayNode messages) throws Exception {
+        ObjectNode root = mapper.createObjectNode();
+        root.put("model", this.chatModel);
+        root.put("temperature", 0.0);
+        root.set("messages", messages);
         return sendRequest(baseUrl + "/chat/completions", root);
     }
-
     @Override
     public String generate(String systemPrompt, String userPrompt) throws Exception {
         ArrayNode messages = mapper.createArrayNode();
         messages.addObject().put("role", "system").put("content", systemPrompt);
         messages.addObject().put("role", "user").put("content", userPrompt);
-        return chat(messages);
+        ObjectNode root = mapper.createObjectNode();
+        root.put("model", this.chatModel);
+        root.put("temperature", 0.0);
+        root.set("messages", messages);
+        // 这里调用底层的发送，不走带 tools 的 chat 方法
+        return sendRequest(baseUrl + "/chat/completions", root);
     }
 
     @Override
@@ -87,7 +157,28 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
             JsonNode root = mapper.readTree(raw);
             // 只有 Chat 接口有 choices 字段，Embedding 接口返回原始 JSON 字符串供解析
             if (root.has("choices")) {
-                return root.path("choices").get(0).path("message").path("content").asText().trim();
+            		JsonNode message = root.path("choices").get(0).path("message");
+            		// 🌟 核心判断：如果模型想调用工具 /*
+            		/*
+            		"message": {
+            		    "role": "assistant",
+            		    "content": null, 
+            		    "tool_calls": [
+            		        {
+            		            "id": "call_abc123",
+            		            "type": "function",
+            		            "function": {
+            		                "name": "query_visa_policy",
+            		                "arguments": "{\"country\": \"中国\", \"citizenship\": \"法国\"}"
+            		            }
+            		        }
+            		    ]
+            		}
+            		*/
+            	    if (message.has("tool_calls")) {
+            	        return "TOOL_CALL:" + message.path("tool_calls").get(0).toString();
+            	    }
+                 return root.path("choices").get(0).path("message").path("content").asText().trim();
             }
             return raw; 
         }

@@ -1,5 +1,10 @@
 ﻿
+git branch
+git status
+
 git log --pretty=format:"%h %ad | %s" --date=format:"%Y-%m-%d %H:%M:%S"
+
+git archive --format=zip -o /c/tmp/version_export.zip abc1234
 
 
 改动一点代码（比如在 ChatExample2.java 加一行注释）。
@@ -87,4 +92,73 @@ git diff main origin/main
 
 git pull origin main
 
-git pull 的底层逻辑就是一个简单的组合公式：$$git\ pull = git\ fetch + git\ merge$$🛠️ 分解 pull 执行的两个阶段当你敲下 git pull 时，Git 在后台其实帮你跑了两趟：第一阶段：联网 Fetch (下载)Git 会连接远程服务器（GitHub），把云端最新的所有代码和版本记录下载到你的本地仓库，并存放在一个叫 origin/main 的镜像分支里。特点：这一步是纯下载，它不会碰你正在写的代码文件。第二阶段：本地 Merge (合并)下载完成后，Git 会立刻尝试把你刚刚下载的 origin/main（镜像）合入你当前所在的 main（工作区）。特点：这一步是动真格的。Git 会对比两个版本：如果没有冲突，它会自动把新代码合进去。如果有冲突，它会停下来让你手动解决。🔍 为什么老手喜欢分开操作？虽然 pull 一步到位很方便，但有些场景下分开做更专业：安全检查：如果你只想知道同事改了什么，但还不想把他的代码合进来（怕弄乱你现在的思路），你只能用 fetch。断网办公：如果你在高铁上没有网络，但你出发前执行过 fetch，你依然可以在没网的情况下执行 merge，因为数据已经都在你本地仓库的镜像里了。避免错误的合并：如果你不小心在错误的分支上执行了 pull，它会立刻把远程代码合进来，有时候会搞出一堆麻烦。
+git pull 的底层逻辑就是一个简单的组合公式：$$git\ pull = git\ fetch + git\ merge$$🛠️ 分解 pull 执行的两个阶段当你敲下 git pull 时，Git 在后台其实帮你跑了两趟：第一阶段：联网 Fetch (下载)Git 会连接远程服务器（GitHub），把云端最新的所有代码和版本记录下载到你的本地仓库，并存放在一个叫 origin/main 的镜像分支里。特点：这一步是纯下载，它不会碰你正在写的代码文件。第二阶段：本地 Merge (合并)下载完成后，Git 会立刻尝试把你刚刚下载的 origin/main（镜像）合入你当前所在的 main（工作区）。特点：这一步是动真格的。Git 会对比两个版本：如果没有冲突，它会自动把新代码合进去。如果有冲突，它会停下来让你手动解决。🔍 为什么老手喜欢分开操作？虽然 pull 一步到位很方便，但有些场景下分开做更专业：安全检查：如果你只想知道同事改了什么，但还不想把他的代码合进来（怕弄乱你现在的思路），你只能用 fetch。断网办公：如果你在高铁上没有网络，但你出发前执行过 fetch，你依然可以在没网的情况下执行 merge，因为数据已经都在你本地仓库的镜像里了。避免错误的合并：如果你不小心在错误的分支上执行了 pull，
+它会立刻把远程代码合进来，有时候会搞出一堆麻烦。
+
+
+
+
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/lhw300/rebaselab.git
+git push -u origin main
+
+
+如果第二个人也修改了后，
+第一个人 1.pull下来手工检查合并
+git pull origin feature-login
+
+2. 用变基
+第一步：git pull --rebase (发现冲突)。
+
+第二步：手动修改 login.txt (解决冲突)。
+
+第三步：git add login.txt (告诉 Git 准备好了)。
+
+第四步：git rebase --continue (完成变基，进入编辑器保存退出)。
+
+第五步：git push (如果报错就加 -u origin feature-login)。
+
+
+
+
+
+切换的是什么指针？
+在 Git 的内部世界里，有两个关键指针：
+
+分支指针（Branch Reference）：比如 main 或 feature-login。它们本质上是指向某个具体提交（Commit）的“书签”。
+
+HEAD 指针（The HEAD）：这是 Git 的“核心指针”。它指向你当前正在工作的那个分支。
+
+当你执行 git checkout -b feature-login 时：
+
+Git 先在当前 Commit 上新建一个名为 feature-login 的分支指针。
+
+关键动作：将 HEAD 指针 从原来的 main 挪到 feature-login 上。
+
+
+
+如果你想查看本地仓库目前关联了哪个远程后端地址，最常用的命令是：
+
+Bash
+git commit -m "commit by it"
+在终端执行以下两条命令即可完成身份登记
+git config --global user.email "你的邮箱@example.com"
+git config --global user.name "你的名字"
+
+git remote -v
+
+
+命令是否联网作用
+git fetch是从后端下载最新的代码数据到本地仓库，但不改变你现在的代码。
+git pull是下载并自动合并到你现在的代码里。
+git checkout否 纯本地操作，在已有的数据中切换不同的“快照”。并不下载
+
+如果你想下载同事新创建的远程分支，只用 checkout 是不行的。你需要：
+
+git fetch（先把数据从后端下载到本地仓库）
+
+git checkout 远程分支名（再切换过去）
+
