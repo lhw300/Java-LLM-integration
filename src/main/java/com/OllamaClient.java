@@ -6,20 +6,21 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import okhttp3.*;
 
-// 🌟 同样实现这两个接口，无缝替换 OpenAI
 public class OllamaClient implements LlmClient, EmbeddingClient {
     
-    private final String baseUrl; // Ollama 的基础地址
+    private final String baseUrl; 
     private final String chatModel; 
     private final String embedModel; 
     private final OkHttpClient httpClient;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final String apiKey; 
 
-    public OllamaClient(String baseUrl, String chatModel, String embedModel, OkHttpClient httpClient) {
+    public OllamaClient(String baseUrl, String chatModel, String embedModel, OkHttpClient httpClient, String apiKey) {
         this.baseUrl = baseUrl;
         this.chatModel = chatModel;
         this.embedModel = embedModel;
         this.httpClient = httpClient;
+        this.apiKey = apiKey; 
     }
 
     @Override
@@ -28,8 +29,6 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         root.put("model", this.chatModel);
         root.put("temperature", 0.0);
         root.set("messages", messages);
-
-        // 调用 Ollama 的 OpenAI 兼容对话接口
         return sendRequest(baseUrl + "/chat/completions", root);
     }
 
@@ -46,49 +45,47 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         ObjectNode root = mapper.createObjectNode();
         root.put("model", this.embedModel);
         root.put("input", text);
-
-        // 调用 Ollama 的 OpenAI 兼容向量接口
-        RequestBody body = RequestBody.create(mapper.writeValueAsString(root), MediaType.parse("application/json; charset=utf-8"));
-        Request request = new Request.Builder()
-                .url(baseUrl + "/embeddings")
-                .post(body).build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String raw = response.body().string();
-            if (!response.isSuccessful()) {
-                throw new RuntimeException("Ollama Embed Error: " + response.code() + " - " + raw);
-            }
-            JsonNode rootNode = mapper.readTree(raw);
-            JsonNode embeddingNode = rootNode.path("data").get(0).path("embedding");
-            double[] vector = new double[embeddingNode.size()];
-            for (int i = 0; i < embeddingNode.size(); i++) {
-                vector[i] = embeddingNode.get(i).asDouble();
-            }
-            return vector;
+     // 🌟 智能兼容逻辑
+        // 1. 如果是阿里百炼在线版 (text-embedding-v3)
+        if ("text-embedding-v3".equals(this.embedModel) && this.apiKey != null) {
+            root.put("dimensions", 1024); // 
         }
+        // 2. 如果是本地 Ollama (如 nomic-embed-text)，不加 dimensions 参数
+        // 这样它会保持原有的 768 维逻辑，不会报错
+        // 🌟 修复点：调用内部的 sendRequest 而不是手动构建 Request
+        // sendRequest 会自动根据是否存在 apiKey 添加 Authorization 头
+        String rawResponse = sendRequest(baseUrl + "/embeddings", root);
+        
+        JsonNode rootNode = mapper.readTree(rawResponse);
+        JsonNode embeddingNode = rootNode.path("data").get(0).path("embedding");
+        double[] vector = new double[embeddingNode.size()];
+        for (int i = 0; i < embeddingNode.size(); i++) {
+            vector[i] = embeddingNode.get(i).asDouble();
+        }
+        return vector;
     }
 
-    // 内部 HTTP 通信方法 (去掉了 Authorization 头，因为本地不需要)
     private String sendRequest(String url, ObjectNode bodyNode) throws Exception {
         String bodyJson = mapper.writeValueAsString(bodyNode);
-      //  System.out.println("🤖 [OllamaClient] 发送本地请求: " + bodyJson);
-        String bodyJson2 = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(bodyNode);
-        
-        // 现在这里打印出来的就是易读的格式了
-        System.out.println("🤖 [OllamaClient] 发送本地请求: \n" + bodyJson2);
         RequestBody body = RequestBody.create(bodyJson, MediaType.parse("application/json; charset=utf-8"));
-        Request request = new Request.Builder()
+        
+        Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
-                // Ollama 默认不需要 Bearer Token
-                .post(body).build();
+                .post(body);
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        // 🌟 这里是正确的：处理了 API Key
+        if (this.apiKey != null && !this.apiKey.trim().isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + this.apiKey);
+        }
+
+        try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
             String raw = response.body().string();
             if (!response.isSuccessful()) {
-                throw new RuntimeException("Ollama Chat Error: " + response.code() + " - " + raw);
+                throw new RuntimeException("API Error: " + response.code() + " - " + raw);
             }
             
             JsonNode root = mapper.readTree(raw);
+            // 只有 Chat 接口有 choices 字段，Embedding 接口返回原始 JSON 字符串供解析
             if (root.has("choices")) {
                 return root.path("choices").get(0).path("message").path("content").asText().trim();
             }

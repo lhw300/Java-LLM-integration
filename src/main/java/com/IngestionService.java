@@ -21,7 +21,7 @@ public class IngestionService {
         // 🌟 配置区：自由切换你的数据源和 AI 类型
         // ==========================================
         String filePath = "e:\\eit\\openai\\aiknowledge.txt"; // 你的知识库文件路径
-        String aiType = "ollama"; // 切换: "ollama" 或 "openai"
+        String aiType = "qwen-online"; // 切换: "ollama" 或 "openai"
       //  aiType = "openai";
         System.out.println("🚀 启动知识库导入流水线...");
         System.out.println("📦 目标 AI 引擎: " + aiType);
@@ -44,11 +44,33 @@ public class IngestionService {
                 "http://localhost:11434/v1", 
                 "qwen2.5:1.5b", 
                 "nomic-embed-text", 
-                CLIENT
+                CLIENT,null
             );
             tableName = "enterprise_knowledge_768"; // Nomic 专用表 (768维)
             
-        } else {
+        } else if ("qwen-online".equalsIgnoreCase(aiType)) {
+        		System.out.println("☁️ 正在使用阿里云百炼进行全量数据重刷...");
+            
+         //   String aliyunApiKey = "你的_DASHSCOPE_API_KEY"; // 建议使用 System.getenv("DASHSCOPE_API_KEY")
+            String aliyunApiKey = System.getenv("QWEN_API_KEY"); // 请确保环境变量已设置
+            System.out.println("☁️ 正在使用阿里云百炼进行全量数据重刷..."+aliyunApiKey);
+            String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+
+            embedClient = new OllamaClient(
+                aliyunBaseUrl, 
+                "qwen-plus",          // 聊天模型
+                "text-embedding-v3",  // 🌟 阿里专用向量模型
+                CLIENT,
+                aliyunApiKey          // 🌟 传入 Key 以支持鉴权
+            );
+            
+            // 🌟 关键：表名必须指向您为阿里向量准备的新表
+            tableName = "enterprise_knowledge_qwen_1024";
+                
+            }
+        
+        
+        else {
             throw new IllegalArgumentException("不支持的 AI 类型: " + aiType);
         }
         

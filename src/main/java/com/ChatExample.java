@@ -73,14 +73,18 @@
 	        	};
 	        String[] policyScenario3  = {
 	        		 
-	        	    "法国人去中国需要提前办签证吗？" ,              // 预期搜索词：美国护照 上海 144小时过境免签
-	        		 "我需要提前办签证吗？"    
+	        		"法国人去中国需要提前办签证吗？" ,             // 预期搜索词：美国护照 上海 144小时过境免签
+	        		 "我需要提前办签证吗？"                  // 预期搜索词：美国护照 上海 144小时过境免签
+	        		    
 	        	};
 	        
 	        String[] userSteps=policyScenario3;
 	        // 获取该用户的专属会话
-	        SessionManager.init("ollama");
-	       // SessionManager.init("openai");
+	        //SessionManager.init("ollama");
+	      // SessionManager.init("openai");
+	       SessionManager.init("qwen-online");
+	    // 这一步会同时打通对话接口和向量接口的网络链路
+	       SessionManager.warmUp();
 	        ChatSession session = SessionManager.getSession(clientId);
 	        
 	        System.out.println("🚀 开始 RAG 多轮对话引擎测试...\n");

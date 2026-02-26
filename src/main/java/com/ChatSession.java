@@ -97,8 +97,16 @@ public class ChatSession {
 				// 🌟 改动点：调用接口的 generate 方法，而不是静态的 SessionManager
 				String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text
 						+ ")";
+				
+				long startTime = System.currentTimeMillis();
+
 				String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
 
+				// End the timer and print the duration
+				long endTime = System.currentTimeMillis();
+				System.out.println("⏱️ AI rewritten Time: " + (endTime - startTime) + " ms");			
+				
+				
 				if (rewritten != null && !rewritten.isEmpty()) {
 					optimizedQuery = rewritten;
 					System.out.println("✨ 查询已重写为: " + optimizedQuery);

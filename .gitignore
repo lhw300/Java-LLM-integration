@@ -10,7 +10,8 @@
 !pom.xml
 !README.md
 !.gitignore
-
+!aiknowledge.txt
+!*.txt
 # 4. 排除掉虽然是 xml 但包含敏感信息的特定文件（可选）
 # 如果有包含 API Key 的配置文件，可以取消下面这行的注释
 # secret-config.xml
