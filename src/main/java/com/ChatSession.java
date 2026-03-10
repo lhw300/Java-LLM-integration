@@ -56,7 +56,7 @@ public class ChatSession {
 	private static final int MAX_QUERY_HISTORY = 16;
 	private static final int MAX_ASK_HISTORY = 40;
 	private static final int MAX_MESSAGE_LENGTH = 1000;
-	private static final double SIMILARITY_THRESHOLD = 0.5;
+	private static final double SIMILARITY_THRESHOLD = 0.6;
 	// ⚡ 优化 1: 复用 ObjectMapper (单例)
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -417,6 +417,12 @@ public class ChatSession {
         queryHistory.addMessage("User", text);
         queryHistory.addMessage("Context", "【未匹配到相关知识】");
         queryHistory.trim(MAX_QUERY_HISTORY);
+
+        // 🌟 关键修复：记录到正式对话历史（用于发给 AI）
+        history.addMessage("user", text);
+        history.addMessage("assistant", ca.answer);
+        history.trim(MAX_HISTORY);
+
         return ca;
     }
 
@@ -491,12 +497,12 @@ public class ChatSession {
         String historyContextStr = queryHistory.getMessageWindowSize(MAX_QUERY_HISTORY);
         if (historyContextStr.trim().isEmpty() || rewrite_prompt == null) return text;
 
-        System.out.println("🔄 正在利用上下文重写用户查询...");
-        String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
 
+        String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
+        System.out.println("🔄 正在利用上下文重写用户查询...userPrompt="+userPrompt);
         long startTime = System.currentTimeMillis();
         String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
-        System.out.println("⏱️ AI rewritten Time: " + (System.currentTimeMillis() - startTime) + " ms");
+        System.out.println("⏱️ AI rewritten Time: " + (System.currentTimeMillis() - startTime) + " ms 重写后:"+rewritten);
 
         return (rewritten != null && !rewritten.isEmpty()) ? rewritten : text;
     }
@@ -511,7 +517,7 @@ public class ChatSession {
         long rerankStart = System.currentTimeMillis();
 
         for (SearchService.KnowledgeItem item : candidates) {
-            item.distance = calculateSemanticDistance(query, item.content);
+            item.distance = calculateSemanticDistance(query,item.summary, item.content);
         }
 
         // 按精排得分重新排序
@@ -522,17 +528,21 @@ public class ChatSession {
     }
 
     // 独立的语义距离计算逻辑
-    private double calculateSemanticDistance(String query, String content) {
-        String rerankSys = "你是一个文档匹配专家。判断【内容】能否回答【问题】。只输出一个 0.0 到 1.0 的分数，1.0代表最相关，不要输出任何多余解释。";
+    private double calculateSemanticDistance(String query,String summary, String content) {
+        //String rerankSys = "你是一个文档匹配专家。判断【内容】能否回答【问题】。只输出一个 0.0 到 1.0 的分数，1.0代表最相关，不要输出任何多余解释。";
+        // 修改 rerankSys，让要求更明确
+        String rerankSys = "你是一个精确的文档评测专家。请判断提供的【内容】是否包含回答【问题】所需的关键信息。相关请打 0.8-1.0 分，完全不相关打 0.0-0.2 分。只输出数字。";
         String rerankUser = "【问题】：" + query + "\n【内容】：" + content;
         try {
             String scoreRaw = llmClient.generate(rerankSys, rerankUser).trim();
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(\\.\\d+)?)").matcher(scoreRaw);
             if (m.find()) {
                 double score = Double.parseDouble(m.group(1));
+
                 double re= 1.0 - Math.min(score, 1.0); // 映射到 distance 逻辑
-                System.out.println("⏱️ Rerank score="+re+" content="+content.substring(0,20)  );
-                return re;
+               // System.out.println("⏱️ Rerank score="+re+" content="+content.substring(0,20)  );
+                System.out.println("⏱️ Rerank score="+re+" summary="+summary +" Qwen原始评分: " + score );
+                return Math.round(re * 100.0) / 100.0; // 保留两位小数
             }
         } catch (Exception e) {
             System.out.println("⏱️ Rerank "+e);
@@ -560,7 +570,7 @@ public class ChatSession {
             // 为每一条知识创建一个异步任务
             CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
                 // 这个代码块会在线程池的某个子线程里偷偷运行
-                item.distance = calculateSemanticDistance(query, item.content);
+                item.distance = calculateSemanticDistance(query,item.summary, item.content);
             }, rerankExecutor);
 
             // 把任务单存起来，方便后面统一检查是否都做完了
