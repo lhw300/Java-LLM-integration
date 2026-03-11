@@ -5,6 +5,7 @@
 	public class ChatExample {
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
+
             /* RAG 测试用例开始*/
             /* *************************************************************************
              * RAG 多轮对话引擎 - 核心测试套件 (Scenario-Based Test Suite)
@@ -77,41 +78,62 @@
 	        
 
 	        
-	        String[] userSteps=scenarioBoundary;
-	        // 获取该用户的专属会话
-	        //SessionManager.init("ollama");
-	      // SessionManager.init("openai");
+
 	       SessionManager.init("qwen-online");
 	    // 这一步会同时打通对话接口和向量接口的网络链路
 	       SessionManager.warmUp();
-	        ChatSession session = SessionManager.getSession(clientId);
-	        
-	        System.out.println("🚀 开始 RAG 多轮对话引擎测试...\n");
 
-	        // 使用 for 循环遍历每一个问题
-	        for (int i = 0; i < userSteps.length; i++) {
-	            String userQuery = userSteps[i];
-	            
-	            System.out.println("==================================================");
-	            System.out.println("👤 轮次 [" + (i + 1) + "] 提问: " + userQuery);
-	            System.out.println("⏳ 正在请求 AI 及其重写/检索链路...");
-	            
-	            // 核心调用：内部会经历 Rewrite -> Retrieve -> Generation
-	            ChatAnswer answer = session.ask3(userQuery);
-	            
-	            System.out.println("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
-	            System.out.println("==================================================\n");
-	            
-	            // 可选：为了防止连续调用过快触发 OpenAI 的并发限流 (Rate Limit)，可以稍微停顿一下
-	            try {
-	                Thread.sleep(1500); 
-	            } catch (InterruptedException e) {
-	                e.printStackTrace();
-	            }
-	        }
-	        
-	        System.out.println("✅ 测试执行完毕。");
-	        
+            // 汇总所有场景进行回归测试
+            String[][] allScenarios = {scenarioCorrect, scenarioInherit, scenarioRelation, scenarioBoundary};
+            String[] scenarioNamescn = {"场景 1：实体纠错", "场景 2：隐式继承", "场景 3：指代消解", "场景 4：负项边界"};
+// 使用英文定义的场景名称
+            String[] scenarioNames = {
+                    "Scenario 1: Entity Correction",
+                    "Scenario 2: Implicit Inheritance",
+                    "Scenario 3: Anaphora Resolution",
+                    "Scenario 4: Negative Boundary"
+            };
+
+
+
+            for (int s = 0; s < allScenarios.length; s++) {
+                String[] userSteps = allScenarios[s];
+                String currentScenarioName = scenarioNames[s];
+
+                // 【核心改动】为每个场景生成独立的 ID，确保 Session 隔离
+                String independentId = clientId + "_scenario_" + (s + 1);
+                ChatSession session = SessionManager.getSession(independentId);
+
+                System.out.println("##################################################");
+                System.out.println("🚩 正在执行：" + scenarioNames[s]);
+                System.out.println("##################################################                ");
+
+                // 使用 for 循环遍历每一个问题
+                for (int i = 0; i < userSteps.length; i++) {
+                    String userQuery = userSteps[i];
+
+                    System.out.println("==================================================");
+                    System.out.println("👤 轮次 [" + (i + 1) + "] 提问: " + userQuery);
+                    System.out.println("⏳ 正在请求 AI 及其重写/检索链路...");
+                    // 1. 记录开始时间
+                    long questionStart = System.currentTimeMillis();
+                    // 核心调用：内部会经历 Rewrite -> Retrieve -> Generation
+                    ChatAnswer answer = session.ask3(userQuery);
+                    long totalDuration = System.currentTimeMillis() - questionStart;
+                    System.out.println("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
+                    System.out.println("⏱️ 该轮次总响应耗时: " + totalDuration + " ms");
+                    System.out.println("==================================================\n");
+
+                    // 可选：为了防止连续调用过快触发 OpenAI 的并发限流 (Rate Limit)，可以稍微停顿一下
+                    try {
+                        Thread.sleep(1500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                System.out.println("✅ 测试执行完毕。");
+            }
 	        // 如果你需要在这个 main 方法跑完后立刻退出 Java 进程，
 	        // 记得在这里调用之前我们在 SearchService 里加的关掉 HikariCP 连接池的方法。
 	        SearchService.shutdown(); 

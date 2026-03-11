@@ -56,16 +56,20 @@ public class ChatSession {
 	private static final int MAX_QUERY_HISTORY = 16;
 	private static final int MAX_ASK_HISTORY = 40;
 	private static final int MAX_MESSAGE_LENGTH = 1000;
-	private static final double SIMILARITY_THRESHOLD = 0.6;
+	private static final double SIMILARITY_THRESHOLD = 0.82;
+    double TRUST_THRESHOLD = 0.25; // 根据你的日志，0.25 是一个安全的黄金分割点
 	// ⚡ 优化 1: 复用 ObjectMapper (单例)
 	private static final ObjectMapper MAPPER = new ObjectMapper();
+    // 模型路由配置
+
 
 	private ChatHistory history = new ChatHistory(MAX_ASK_HISTORY);
 	QueryHistory queryHistory = new QueryHistory();
 	private String systemMessage = "";
 	ChatAnswer ca = new ChatAnswer(-1,null);
 	// 🌟 核心：引入抽象的大模型客户端，而不是写死的 SessionManager 调用
-	private final LlmClient llmClient;
+	//rivate final LlmClient llmClient;
+    private final ModelRouter router;
 	private final String tableName; // 🌟 新增表名属性
 	private final EmbeddingClient embeddingClient; // ✅ 新增：专门负责向量化的接口
 	String rewrite_prompt = null;
@@ -73,12 +77,12 @@ public class ChatSession {
     // 1. 在类成员变量处增加线程池定义
     private static final ExecutorService rerankExecutor = Executors.newFixedThreadPool(8);
 	// 🌟 规范修改：构造函数要求外部把两个能力分别传进来
-	public ChatSession(LlmClient llmClient, EmbeddingClient embeddingClient, String tableName) {
-        this.llmClient = llmClient;
+    public ChatSession(ModelRouter router, EmbeddingClient embeddingClient, String tableName) {
+        this.router = router;
         this.embeddingClient = embeddingClient;
         this.tableName = tableName; // 🌟 接收表名
-		rewrite_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery.txt", "");
-		ask_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask.txt", "");
+		rewrite_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
+		ask_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
 	}
 
 	void setSystemMessage(String system) {
@@ -118,7 +122,7 @@ public class ChatSession {
 	        if (!historyContextStr.trim().isEmpty() && rewrite_prompt != null) {
 	            System.out.println("🔄 正在重写用户查询...");
 	            String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
-	            String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
+                String rewritten = router.rewriter().generate(rewrite_prompt, userPrompt);
 	            if (rewritten != null && !rewritten.isEmpty()) {
 	            	optimizedQuery = rewritten;
 	            }
@@ -131,7 +135,7 @@ public class ChatSession {
 	        
 	        System.out.println("✅ 发送意图判定请求 (带 Tools 定义)...");
 	        // llmClient.chat 内部会注入 tools 定义
-	        String firstResponse = llmClient.chat(history.toJsonArray());
+            String firstResponse = router.finalLlm().chat(history.toJsonArray());
 	        if (firstResponse.startsWith("TOOL_CALL:")) {
 	            String jsonStr = firstResponse.substring(10);
 	            JsonNode toolCallNode = MAPPER.readTree(jsonStr);
@@ -187,7 +191,7 @@ public class ChatSession {
 
 	                // 4. 第二次调用 AI：生成最终的人类语言回答
 	                System.out.println("💬 AI 正在根据工具结果生成最终回复...");
-	                String finalAnswer = llmClient.chat(conversationContext);
+                    String finalAnswer = router.finalLlm().chat(conversationContext);
 	                
 	                // 更新记录
 	                queryHistory.addMessage("User", text);
@@ -273,7 +277,7 @@ public class ChatSession {
 				
 				long startTime = System.currentTimeMillis();
 
-				String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
+                String rewritten = router.rewriter().generate(rewrite_prompt, userPrompt);
 
 				// End the timer and print the duration
 				long endTime = System.currentTimeMillis();
@@ -301,7 +305,7 @@ public class ChatSession {
             // 打印每一行结果
             System.out.println("🔍 检索到的候选列表:");
             candidates.forEach(item ->
-                    System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+                    System.out.println("距离: " + formatDouble(item.distance) + " 分类:"+item.category+" | 摘要: " + item.summary)
             );
             // 2.2 精排 (Fine Ranking/Rerank): 使用本地 Qwen 模型进行语义匹配打分
             System.out.println("🎯 阶段二：使用本地 Qwen 进行 Rerank 精排...");
@@ -313,7 +317,7 @@ public class ChatSession {
                 String rerankUser = "【用户问题】：" + optimizedQuery + "\n【知识内容】：" + item.content;
 
                 try {
-                    String scoreRaw = llmClient.generate(rerankSys, rerankUser).trim();
+                    String scoreRaw = router.reranker().generate(rerankSys, rerankUser).trim();
                     // 过滤非数字字符，只提取分数
                     //double score = Double.parseDouble(scoreRaw.replaceAll("[^0-9.]", ""));
  // 仅提取第一个出现的数字或浮点数
@@ -373,7 +377,7 @@ public class ChatSession {
 
             // 调用 AI 生成最终答案
             long chatStart = System.currentTimeMillis();
-            String answer = llmClient.chat(history.toJsonArray());
+            String answer = router.finalLlm().chat(history.toJsonArray());
             System.out.println("⏱️ 最终答案生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
 
             if (answer != null && !answer.isEmpty()) {
@@ -451,15 +455,17 @@ public class ChatSession {
         String processedText = (text.length() > MAX_MESSAGE_LENGTH) ? text.substring(0, MAX_MESSAGE_LENGTH) : text;
 
         try {
+            long requeryStart=System.currentTimeMillis();
             // 步骤 1: Rewrite - 结合历史上下文生成优化查询
             String optimizedQuery = performQueryRewrite(processedText);
+            System.out.println("rewrite耗时="+(System.currentTimeMillis() - requeryStart) + " ms");
 
             // 步骤 2: Retrieve - 两阶段检索（粗排 + 本地 Qwen 精排）
             List<SearchService.KnowledgeItem> finalItems = performTwoStageRetrievalAsync(optimizedQuery);
 
             System.out.println("🔍 检索到的候选列表 after Retrieve - 两阶段检索:");
             finalItems.forEach(item ->
-                    System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+                    System.out.println("距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary)
             );
             // 步骤 3: Validate - 结果校验与拦截
             if (finalItems.isEmpty()) return handleEmptyResult(processedText, ca);
@@ -468,7 +474,7 @@ public class ChatSession {
             // 4. 构建上下文
             StringBuilder fullCtx = new StringBuilder();
             for (int i = 0; i < finalItems.size(); i++) {
-                fullCtx.append(String.format("%d. 【%s】%s\n", i + 1, finalItems.get(i).summary, finalItems.get(i).content));
+                fullCtx.append(String.format("%d. 【%s-%s】%s\n", i + 1,finalItems.get(i).category, finalItems.get(i).summary, finalItems.get(i).content));
             }
 
             // 🌟 5. 核心：执行封装好的动作
@@ -501,7 +507,7 @@ public class ChatSession {
         String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
         System.out.println("🔄 正在利用上下文重写用户查询...userPrompt="+userPrompt);
         long startTime = System.currentTimeMillis();
-        String rewritten = llmClient.generate(rewrite_prompt, userPrompt);
+        String rewritten = router.rewriter().generate(rewrite_prompt, userPrompt);
         System.out.println("⏱️ AI rewritten Time: " + (System.currentTimeMillis() - startTime) + " ms 重写后:"+rewritten);
 
         return (rewritten != null && !rewritten.isEmpty()) ? rewritten : text;
@@ -517,7 +523,7 @@ public class ChatSession {
         long rerankStart = System.currentTimeMillis();
 
         for (SearchService.KnowledgeItem item : candidates) {
-            item.distance = calculateSemanticDistance(query,item.summary, item.content);
+            item.distance = calculateSemanticDistance(query,item.category,item.summary, item.content);
         }
 
         // 按精排得分重新排序
@@ -528,20 +534,26 @@ public class ChatSession {
     }
 
     // 独立的语义距离计算逻辑
-    private double calculateSemanticDistance(String query,String summary, String content) {
+    private double calculateSemanticDistance(String query,String category,String summary, String content) {
         //String rerankSys = "你是一个文档匹配专家。判断【内容】能否回答【问题】。只输出一个 0.0 到 1.0 的分数，1.0代表最相关，不要输出任何多余解释。";
         // 修改 rerankSys，让要求更明确
         String rerankSys = "你是一个精确的文档评测专家。请判断提供的【内容】是否包含回答【问题】所需的关键信息。相关请打 0.8-1.0 分，完全不相关打 0.0-0.2 分。只输出数字。";
-        String rerankUser = "【问题】：" + query + "\n【内容】：" + content;
+        String rerankUserNouse = "【问题】：" + query + "\n【内容】：" + content;
+        // 拼接完整的参考资料上下文
+        String rerankUser = "【用户问题】：" + query + "\n" +
+                "【参考资料】如下：\n" +
+                "  - 分类：" + category + "\n" +
+                "  - 摘要：" + summary + "\n" +
+                "  - 内容：" + content;
         try {
-            String scoreRaw = llmClient.generate(rerankSys, rerankUser).trim();
+            String scoreRaw = router.reranker().generate(rerankSys, rerankUser).trim();
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(\\.\\d+)?)").matcher(scoreRaw);
             if (m.find()) {
                 double score = Double.parseDouble(m.group(1));
 
                 double re= 1.0 - Math.min(score, 1.0); // 映射到 distance 逻辑
                // System.out.println("⏱️ Rerank score="+re+" content="+content.substring(0,20)  );
-                System.out.println("⏱️ Rerank score="+re+" summary="+summary +" Qwen原始评分: " + score );
+                System.out.println("⏱️ Rerank score="+formatDouble(re)+" category="+category+" summary="+summary +" Qwen原始评分: " + score );
                 return Math.round(re * 100.0) / 100.0; // 保留两位小数
             }
         } catch (Exception e) {
@@ -549,51 +561,163 @@ public class ChatSession {
         }
         return 1.0; // 默认不相关
     }
-    private List<SearchService.KnowledgeItem> performTwoStageRetrievalAsync(String query) throws Exception {
-        // 1. 粗排：从数据库获取 15 条候选
+    private List<SearchService.KnowledgeItem> performTwoStageRetrievalAsyncNoRerank(String query) throws Exception {
+        // 1. 粗排：从向量数据库获取候选 (这是你目前觉得准的地方)
         List<SearchService.KnowledgeItem> candidates = SearchService.getRelevantKnowledge(tableName, query, embeddingClient);
-        // 打印每一行结果
+
+        System.out.println("🔍 [仅粗排模式] 检索到的候选列表:");
+        candidates.forEach(item ->
+                System.out.println("原始向量距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary)
+        );
+
+        if (candidates.isEmpty()) return candidates;
+
+        // 2. 🌟 跳过精排逻辑 🌟
+        // 直接按原始向量距离排序（通常数据库返回时已经排好了，这里保底再排一次）
+        candidates.sort(Comparator.comparingDouble(a -> a.distance));
+
+        System.out.println("⚠️ 已跳过 Rerank 精排环节，直接返回粗排前 3 名。");
+
+        // 直接返回前 N 个结果给 finalAsk
+        return candidates.subList(0, Math.min(3, candidates.size()));
+    }
+    //10个全参与精排
+    private List<SearchService.KnowledgeItem> performTwoStageRetrievalAsync2(String query) throws Exception {
+        // 1. 粗排：从数据库获取候选
+        List<SearchService.KnowledgeItem> candidates = SearchService.getRelevantKnowledge(tableName, query, embeddingClient);
+
         System.out.println("🔍 检索到的候选列表getRelevantKnowledge:");
         candidates.forEach(item ->
-                System.out.println("距离: " + item.distance + " | 摘要: " + item.summary)
+                System.out.println("距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary)
         );
         if (candidates.isEmpty()) return candidates;
 
         System.out.println("🎯 开始并行精排 (For 循环异步版)...");
         long rerankStart = System.currentTimeMillis();
 
-        // 2. 创建一个列表，用来存放所有的“考试回执单” (Futures)
         List<CompletableFuture<Void>> futures = new ArrayList<>();
 
-        // 3. 使用你熟悉的 for 循环分发任务
         for (SearchService.KnowledgeItem item : candidates) {
-            // 为每一条知识创建一个异步任务
+            // 保存原始的向量距离，防止被精排分数覆盖
+            double originalVectorDistance = item.distance;
+
             CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
-                // 这个代码块会在线程池的某个子线程里偷偷运行
-                item.distance = calculateSemanticDistance(query,item.summary, item.content);
+                // 执行精排打分
+                double rerankDist = calculateSemanticDistance(query, item.category, item.summary, item.content);
+
+                // 🌟 核心逻辑：双重保险
+                // 如果向量检索距离 < 0.3 (极其优秀)，则即便精排不看好，也强制给一个及格分（如 0.6）
+                // 这样它就能通过你设置的 0.82 阈值，进入 finalAsk
+                if (originalVectorDistance < 0.35 && rerankDist > 0.8) {
+                    System.out.println("💡 [命中补偿] 摘要: " + item.summary + " 粗排距离 " + originalVectorDistance + " 极优，强制修正精排分。");
+                    item.distance = 0.6;
+                } else {
+                    item.distance = rerankDist;
+                }
             }, rerankExecutor);
 
-            // 把任务单存起来，方便后面统一检查是否都做完了
             futures.add(task);
         }
 
         try {
-            // 4. 指挥官在这里坐镇，等待所有“回执单”都打上“已完成”的印章
-            // 设置 5 秒硬性超时，防止某个任务卡死导致整个请求挂起
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(5, TimeUnit.SECONDS);
 
-            // 5. 只有所有人都打完分了，才进行重新排序
             candidates.sort(Comparator.comparingDouble(a -> a.distance));
             System.out.println("⏱️ 并行 Rerank 成功，耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
 
         } catch (TimeoutException e) {
-            // ⚡ 降级逻辑：如果 5 秒还没跑完，就不等了，直接用数据库原本的顺序
-            System.err.println("⚠️ Rerank 超时，执行降级方案：使用向量原始排序。");
+            System.err.println("⚠️ Rerank 超时，执行降级方案。");
         }
 
-        // 6. 无论有没有精排成功，最终都只取前 3 条
         return candidates.subList(0, Math.min(3, candidates.size()));
+    }
+    //“语义快道 (Semantic Fast Track)”。
+    //通过这个逻辑，你可以大幅降低那些“送分题”的延迟。对于你的问题：是的，< 0.2 的结果应该直接视为“优胜者”直接保留，不再参与后续耗时的精排计算。
+    private List<SearchService.KnowledgeItem> performTwoStageRetrievalAsync(String query) throws Exception {
+
+        long queryStart = System.currentTimeMillis();
+        // 1. 向量检索：从数据库获取初步候选 (假设召回 10 个)
+        List<SearchService.KnowledgeItem> allCandidates = SearchService.getRelevantKnowledge(tableName, query, embeddingClient);
+        if (allCandidates.isEmpty()) return allCandidates;
+        System.out.println("🔍 检索到的候选列表getRelevantKnowledge: 粗排耗时="+(System.currentTimeMillis() - queryStart) + " ms");
+        allCandidates.forEach(item ->
+                System.out.println("距离: " + formatDouble(item.distance )+ "分类: " + item.category + "分类| 摘要: " + item.summary)
+        );
+
+        List<SearchService.KnowledgeItem> fastTrackItems = new ArrayList<>(); // 快道池
+        List<SearchService.KnowledgeItem> slowPool = new ArrayList<>();      // 待定池
+
+        // 🏆 策略：基于对粗排结果的信任进行分流
+        for (SearchService.KnowledgeItem item : allCandidates) {
+
+            if (item.distance < TRUST_THRESHOLD) {
+                // 🚀 [绝对信任] 距离极小，视为“上帝视角”直接命中的条目，不参与精排耗时
+                System.out.println("绝对信任 直接命中 距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary);
+                fastTrackItems.add(item);
+            } else if (item.distance < 0.6) {
+                // 🔍 [待定筛选] 距离在 0.2-0.6 之间，可能相关，送去给精排做逻辑裁决
+                slowPool.add(item);
+            }
+        }
+        // 🌟 性能熔断：如果快道已经足够好，直接收工，不再进入昂贵的精排逻辑
+        if (fastTrackItems.size() >= 1) {
+            // 原代码是 >= 3，对于电话机器人，只要有 1 个极度相关的条目（距离 < 0.2），
+            // 往往就能命中知识点，直接返回可以极大降低 P99 延迟。
+            System.out.println("🚀 [性能熔断] 命中上帝视角条目，直接返回，彻底跳过精排任务。");
+            return fastTrackItems.subList(0, Math.min(fastTrackItems.size(), 3));
+        }
+        if (slowPool.isEmpty()) {
+            System.out.println("没有候选需要精排，直接返回已有的 跳过精排任务。");
+            return fastTrackItems; // 没有候选需要精排，直接返回已有的
+        }
+        // 🌟 固定取待定池中的前 5 个进行精排 (Top 5 优胜者制)
+        List<SearchService.KnowledgeItem> needRerankItems = slowPool.stream()
+                .limit(5)
+                .toList();
+
+
+
+        System.out.println("🎯 启动并行精排，样本数: " + needRerankItems.size());
+        long rerankStart = System.currentTimeMillis();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (SearchService.KnowledgeItem item : needRerankItems) {
+            CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
+                double originalDist = item.distance;
+                // 调用大模型精排评分
+                double rerankDist = calculateSemanticDistance(query, item.category, item.summary, item.content);
+
+                // 🛡️ 补偿机制：如果粗排距离较近(0.3以内)，即使精排判死刑，也强制拉回及格线
+                if (originalDist < 0.35 && rerankDist > 0.8) {
+                    System.out.println("💡 [命中补偿] 摘要: " + item.summary + " 粗排距离 " + originalDist + " 极优，强制修正精排分。");
+
+                    item.distance = 0.6;
+                } else {
+                    item.distance = rerankDist;
+                }
+            }, rerankExecutor);
+            futures.add(task);
+        }
+
+        // 等待所有精排任务完成
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            System.err.println("⚠️ 部分精排任务超时，执行现有结果排序。");
+        }
+
+        // 3. 合并：将“保送生”和“优等生”放到一起
+        List<SearchService.KnowledgeItem> finalResults = new ArrayList<>();
+        finalResults.addAll(fastTrackItems);
+        finalResults.addAll(needRerankItems);
+
+        // 最终排序：按修正后的距离排序，取前 3 名喂给 AI
+        finalResults.sort(Comparator.comparingDouble(a -> a.distance));
+
+        System.out.println("⏱️ rerank检索全链路耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
+
+        return finalResults.subList(0, Math.min(3, finalResults.size()));
     }
     /**
      * 动作 1：记录重写历史 (仅限 queryHistory)
@@ -624,7 +748,12 @@ public class ChatSession {
 
         // 2. 调用 LLM
         long chatStart = System.currentTimeMillis();
-        String answer = llmClient.chat(history.toJsonArray());
+// 在发送请求前获取 json 字符串
+        String jsonPayload = history.toJsonArray().toString();
+        System.out.println("⚡ Context 长度: " + jsonPayload.length() + " chars");
+
+// 执行 chat
+        String answer = router.finalLlm().chat(history.toJsonArray());
         System.out.println("⏱️ 最终答案生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
 
         // 3. 安全截断并存入对话历史 (history)
@@ -891,5 +1020,8 @@ public class ChatSession {
 
 		return result;
 	}
-
+    public static String formatDouble(double value) {
+        // %.4f 表示保留 4 位小数
+        return String.format("%.2f", value);
+    }
 }

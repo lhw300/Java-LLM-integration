@@ -19,6 +19,10 @@ import okhttp3.ConnectionPool;
 	import okhttp3.Response;
 
 	public class SessionManager {
+        private static ModelRouter     ACTIVE_ROUTER = null;
+        private static LlmClient ACTIVE_LLM = null;
+        private static EmbeddingClient ACTIVE_EMBED = null;
+        private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
 
 	    private static final Map<String, ChatSession> sessions = new ConcurrentHashMap<>();
 	    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -45,104 +49,102 @@ import okhttp3.ConnectionPool;
 	 // 实例化一个具体的模型客户端 (比如上线用 OpenAI，本地测试换成 OllamaClient)
  
 	 // 分别声明两个接口能力
-	    private static LlmClient ACTIVE_LLM = null;
-	    private static EmbeddingClient ACTIVE_EMBED = null;
-	    private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
+
 	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
 	    public static void init(String type) {
 	        if (type == null) {
 	            throw new IllegalArgumentException("模型类型不能为空！");
 	        }
-	        
-	        if (type.equalsIgnoreCase("openai")) {
-	            System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
-	            OpenAIClient lccc = new OpenAIClient(
-	                System.getenv("OPENAI_API_KEY"), 
-	                "gpt-4o-mini", 
-	                "text-embedding-3-small", 
-	                CLIENT
-	            );
-	            
-	            
-	         // 将这个全能实例分别赋给两个接口变量
-	            ACTIVE_LLM = lccc;
-	            ACTIVE_EMBED = lccc;
-	            ACTIVE_TABLE = "enterprise_knowledge_1536"; // 👈 动态表名
-	            System.out.println("✅ OpenAI 模型客户端已挂载");
-	            
-	            
-	        } else if (type.equalsIgnoreCase("deepseek")) {
-	            // 预留给未来的 DeepSeek
-	            // ACTIVE_LLM = new DeepSeekClient("your_key", CLIENT);
-	            System.out.println("⚙️ 暂未完全实现 DeepSeek...");
-	        } 
-	        else if (type.equalsIgnoreCase("ollama")) {
-	            System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
-	            // Ollama 默认运行在 11434 端口
-	            /*
-	            OllamaClient ollamaClient = new OllamaClient(
-	                "http://localhost:11434/v1", // Ollama 的 OpenAI 兼容接口前缀
-	                "qwen2.5:1.5b",                     // 你的本地大语言模型名 (如果你拉的是 2.5，请改成 qwen2.5)
-	                "nomic-embed-text",          // 本地专用的向量模型
-	                CLIENT
-	            );
-	            */
-	            OllamaClient ollamaClient = new OllamaClient(
-		                "http://192.168.1.23:11434/v1", // Ollama 的 OpenAI 兼容接口前缀
-		                "qwen2.5:7b",                     // 你的本地大语言模型名 (如果你拉的是 2.5，请改成 qwen2.5)
-		                "nomic-embed-text",          // 本地专用的向量模型
-		                CLIENT,
-		                null // 🌟 本地 Ollama 不需要 Key，传 null
-		            );
-	            ACTIVE_LLM = ollamaClient;
-	            ACTIVE_EMBED = ollamaClient;
-	            ACTIVE_TABLE = "enterprise_knowledge_768";  // 👈 动态表名
-	        }
-	        else if (type.equalsIgnoreCase("qwen-online")) {
-	        	System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online)...");
-	            
-	            // 1. 配置参数
-	            String aliyunApiKey = System.getenv("QWEN_API_KEY"); // 请确保环境变量已设置
-	            String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-	            // 2. 实例化客户端 (同时承担 LLM 和 Embedding 职责)
-	            OllamaClient qwenClient = new OllamaClient(
-	                aliyunBaseUrl,
-	                "qwen-plus",           // 逻辑最强的聊天模型 -max  qwen-plus
-	                "text-embedding-v3",  // 🌟 改为阿里的向量模型
-	                CLIENT,
-	                aliyunApiKey          // 传入 Key 以便添加 Header
-	            );
+            if (type.equalsIgnoreCase("openai")) {
+                System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
+                OpenAIClient client = new OpenAIClient(
+                        System.getenv("OPENAI_API_KEY"),
+                        "gpt-4o-mini",
+                        "text-embedding-3-small",
+                        CLIENT
+                );
+                // OpenAI 场景下三个角色暂时都用同一个客户端
+                ACTIVE_ROUTER = new ModelRouter(client, client, client);
+                ACTIVE_LLM    = client;
+                ACTIVE_EMBED  = client;
+                ACTIVE_TABLE  = "enterprise_knowledge_1536";
+                System.out.println("✅ OpenAI 模型客户端已挂载");
 
-	            ACTIVE_LLM = qwenClient;
-	            ACTIVE_EMBED = qwenClient;
-	            
-	            // 3. 🌟 警告：必须更换或重新导入表数据
-	            // 虽然维度也是 1536，但 OpenAI 和阿里的向量是不兼容的
-	            ACTIVE_TABLE = "enterprise_knowledge_qwen_1024"; 
-	            
-	            System.out.println("✅ 全链路 Qwen 客户端已挂载，请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
-	        }
-	        else {
-	            throw new IllegalArgumentException("不支持的大模型类型: " + type);
-	        }
-	    }
+            } else if (type.equalsIgnoreCase("deepseek")) {
+                System.out.println("⚙️ 暂未完全实现 DeepSeek...");
 
-	    public static ChatSession getSession(String clientId) {
-	        // 🌟 增加一道安全防线：防止忘记调用 init()
-	        if (ACTIVE_LLM == null) {
-	            throw new IllegalStateException("大模型客户端尚未初始化！请先调用 SessionManager.init(\"openai\")");
-	        }
+            } else if (type.equalsIgnoreCase("ollama")) {
+                System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
+                OllamaClient ollamaClient = new OllamaClient(
+                        "http://192.168.1.23:11434/v1",
+                        "qwen2.5:7b",
+                        "nomic-embed-text",
+                        CLIENT,
+                        null
+                );
+                // 本地场景：三个角色共用同一模型（本地无 turbo/plus 之分）
+                ACTIVE_ROUTER = new ModelRouter(ollamaClient, ollamaClient, ollamaClient);
+                ACTIVE_LLM    = ollamaClient;
+                ACTIVE_EMBED  = ollamaClient;
+                ACTIVE_TABLE  = "enterprise_knowledge_768";
 
-	        ChatSession session = null;
-	        if(sessions.containsKey(clientId)) {
-	             session = sessions.get(clientId);
-	        } else {
-	             session = new ChatSession(ACTIVE_LLM, ACTIVE_EMBED, ACTIVE_TABLE);
-	             sessions.put(clientId, session);
-	        }
-	        return session;
-	    }
+            } else if (type.equalsIgnoreCase("qwen-online")) {
+                System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
+
+                String aliyunApiKey = System.getenv("QWEN_API_KEY");
+                String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+
+                // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
+                OllamaClient turboClient = new OllamaClient(
+                        aliyunBaseUrl,
+                        "qwen-turbo",          // 快速、低成本
+                        "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
+                        CLIENT,
+                        aliyunApiKey
+                );
+
+                // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
+                OllamaClient plusClient = new OllamaClient(
+                        aliyunBaseUrl,
+                        "qwen-plus",           // 高质量回答
+                        "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
+                        CLIENT,
+                        aliyunApiKey
+                );
+
+                // ── 组装路由器 ────────────────────────────────────────────────────
+                ACTIVE_ROUTER = ModelRouter.of(turboClient, plusClient);
+                //   rewrite → turboClient
+                //   rerank  → turboClient
+                //   final   → plusClient
+
+                ACTIVE_LLM   = plusClient;   // 兼容旧 warmUp 路径
+                ACTIVE_EMBED = turboClient;  // embedding 由 turbo 负责
+                ACTIVE_TABLE = "enterprise_knowledge_qwen_1024";
+
+                System.out.println("✅ Qwen 路由客户端已挂载：rewrite/rerank → turbo | finalAsk → plus");
+                System.out.println("   请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
+
+            } else {
+                throw new IllegalArgumentException("不支持的大模型类型: " + type);
+            }
+        }
+        public static ChatSession getSession(String clientId) {
+            // 🌟 增加一道安全防线：防止忘记调用 init()
+            if (ACTIVE_ROUTER == null) {
+                throw new IllegalStateException("大模型客户端尚未初始化！请先调用 SessionManager.init(\"openai\")");
+            }
+
+            ChatSession session = null;
+            if (sessions.containsKey(clientId)) {
+                session = sessions.get(clientId);
+            } else {
+                session = new ChatSession(ACTIVE_ROUTER, ACTIVE_EMBED, ACTIVE_TABLE);
+                sessions.put(clientId, session);
+            }
+            return session;
+        }
  
 	    public static   String sendToOpenAI(ChatHistory history) throws Exception {
 	        // 创建请求 JSON
@@ -254,28 +256,23 @@ import okhttp3.ConnectionPool;
      * ⚡ 新增: 预热连接池
      * 在应用启动时调用，建立初始连接
      */
-    public static void warmUp() {
-        if (ACTIVE_LLM == null || ACTIVE_EMBED == null) {
-            System.out.println("⚠️ 预热失败：模型客户端尚未初始化。");
-            return;
+        /**
+         * 全链路预热：分别触发 rewrite 路径（turbo）和 embed 路径，建立连接池。
+         */
+        public static void warmUp() {
+            if (ACTIVE_ROUTER == null || ACTIVE_EMBED == null) {
+                System.out.println("⚠️ 预热失败：模型客户端尚未初始化。");
+                return;
+            }
+            System.out.println("⏳ 正在进行全链路预热 (rewriter + embed)...");
+            try {
+                ACTIVE_ROUTER.rewriter().generate("system", "hi");
+                ACTIVE_EMBED.embed("hello");
+                System.out.println("✅ 全链路连接池预热完成");
+            } catch (Exception e) {
+                System.err.println("⚠️ 预热过程中发生异常: " + e.getMessage());
+            }
         }
-
-        System.out.println("⏳ 正在进行全链路预热 (LLM + Embedding)...");
-        
-        try {
-            // 1. 预热对话/重写路径
-            ACTIVE_LLM.generate("system", "hi"); 
-            
-            // 2. 🌟 预热向量请求路径
-            // 随便传入一个短语，触发一次真实的 API 调用
-            ACTIVE_EMBED.embed("hello");
-
-            System.out.println("✅ 全链路连接池预热完成");
-        } catch (Exception e) {
-            // 预热即便失败也不应阻塞主程序
-            System.err.println("⚠️ 预热过程中发生异常: " + e.getMessage());
-        }
-    }
     
     
     public static String rewriteQuery(String query, String history, String systemPrompt) throws Exception {
