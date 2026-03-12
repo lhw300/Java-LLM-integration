@@ -73,13 +73,14 @@
 
 	        
 
-	       SessionManager.init("qwen-online");
+	        SessionManager.init("qwen-online");
+           // SessionManager.init("hybrid");
 	    // 这一步会同时打通对话接口和向量接口的网络链路
 	       SessionManager.warmUp();
 
             // 汇总所有场景进行回归测试
             String[][] allScenarios = {scenarioCorrect, scenarioInherit, scenarioRelation, scenarioBoundary};
-             //allScenarios = new String[][] { scenarioBoundary };
+              //allScenarios = new String[][] { scenarioInherit };
 
 
             String[] scenarioNamescn = {"场景 1：实体纠错", "场景 2：隐式继承", "场景 3：指代消解", "场景 4：负项边界"};
@@ -115,7 +116,7 @@
                     // 1. 记录开始时间
                     long questionStart = System.currentTimeMillis();
                     // 核心调用：内部会经历 Rewrite -> Retrieve -> Generation
-                    ChatAnswer answer = session.ask3(userQuery);
+                    ChatAnswer answer = session.askFullContext(userQuery);
                     long totalDuration = System.currentTimeMillis() - questionStart;
                     System.out.println("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
                     System.out.println("⏱️ 该轮次总响应耗时: " + totalDuration + " ms");

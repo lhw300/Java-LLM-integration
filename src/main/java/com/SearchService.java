@@ -47,8 +47,29 @@ public class SearchService {
      * @param embedClient 向量化客户端
      */
     public static List<KnowledgeItem> getRelevantKnowledge(String tableName, String query, EmbeddingClient embedClient) throws Exception {
+        // 1. 记录 Embedding 计算开始时间
+        long startEmbed = System.currentTimeMillis();
         double[] vector = embedClient.embed(query);
-        return searchTopKnowledge(tableName, vector, 15);
+        long endEmbed = System.currentTimeMillis();
+
+        // 计算并打印第一步耗时
+        long embedDuration = endEmbed - startEmbed;
+        System.out.println("Step 1: Embedding Calculation [Inference] took: " + embedDuration + " ms");
+
+        //
+
+        // 2. 记录向量搜索开始时间
+        long startSearch = System.currentTimeMillis();
+        List<KnowledgeItem> results = searchTopKnowledge(tableName, vector, 15);
+        long endSearch = System.currentTimeMillis();
+
+        // 计算并打印第二步耗时
+        long searchDuration = endSearch - startSearch;
+        System.out.println("Step 2: Vector Similarity Search [Retrieval] took: " + searchDuration + " ms");
+
+        //
+
+        return results;
     }
 
     /**

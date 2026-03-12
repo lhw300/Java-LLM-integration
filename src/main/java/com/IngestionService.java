@@ -33,12 +33,25 @@ public class IngestionService {
         // 自动识别后缀，你可以将此处改为 .xlsx 进行测试
         String filePath = "e:\\eit\\openai\\publishknowledge.xlsx";
         String aiType = "qwen-online";
-
+        //aiType = "hybrid"; // 修改为 hybrid
         System.out.println("🚀 启动知识库导入流水线...");
 
         EmbeddingClient embedClient;
         String tableName;
+        if ("hybrid".equalsIgnoreCase(aiType)) {
+            // ── 1. 使用本地 Ollama 进行向量化 ──────────────────────
+            // 采样 nomic-embed-text (768维)
+            embedClient = new OllamaClient(
+                    "http://localhost:11434/v1",
+                    "qwen2.5:1.5b",         // 仅占位
+                    "nomic-embed-text",      // 🌟 必须匹配本地模型
+                    CLIENT,
+                    null                    // 本地无需 API Key
+            );
+            // ── 2. 目标表必须是 768 维度的表 ────────────────────────
+            tableName = "enterprise_knowledge_768";
 
+        } else
         // 阿里百炼 Qwen-Online 配置
         if ("qwen-online".equalsIgnoreCase(aiType)) {
             String aliyunApiKey = System.getenv("QWEN_API_KEY");
@@ -101,9 +114,15 @@ public class IngestionService {
 
 // 优化逻辑：通过显式的语义引导，让向量具备更强的身份属性
                 // 优化后的写法：去除干扰词，强化“分类”与“内容”的绑定关系
-                String semanticText = String.format("分类：【%s】。摘要：%s。内容：%s",
+                //turbo-plus模式
+                 String semanticText = String.format("分类：【%s】。摘要：%s。内容：%s",
                         category, summary, content);
 
+
+                // 修改 IngestionService.java
+// 原逻辑：String.format("分类：【%s】。摘要：%s。内容：%s", category, summary, content);
+// 优化逻辑：弱化分类标签，直接强调核心内容，减少噪声干扰
+               // String semanticText = String.format("内容主题：%s。详细描述：%s", summary, content);
 
                 double[] vector = embedClient.embed(semanticText);
 

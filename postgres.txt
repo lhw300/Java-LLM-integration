@@ -99,3 +99,23 @@ TABLESPACE pg_default;
 ALTER TABLE IF EXISTS public.enterprise_knowledge_qwen_1024
     OWNER to postgres;
 
+
+
+
+CREATE TABLE IF NOT EXISTS public.enterprise_knowledge_768
+(
+    id character varying(50) COLLATE pg_catalog."default",
+    category character varying(50) COLLATE pg_catalog."default",
+    summary character varying(255) COLLATE pg_catalog."default",
+    content text COLLATE pg_catalog."default",
+    source_name character varying(255) COLLATE pg_catalog."default",
+    is_active boolean DEFAULT true,
+    create_time timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    -- ?? 关键修改：本地 nomic-embed-text 产生的向量是 768 维
+    embedding vector(768), 
+    CONSTRAINT enterprise_knowledge_768_pkey PRIMARY KEY (id)
+)
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.enterprise_knowledge_768
+    OWNER to postgres;

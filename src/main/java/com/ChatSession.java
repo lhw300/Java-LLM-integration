@@ -1,5 +1,7 @@
 package com;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadFactory ;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -8,6 +10,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.*;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.LinkedBlockingQueue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -74,8 +79,41 @@ public class ChatSession {
 	private final EmbeddingClient embeddingClient; // ✅ 新增：专门负责向量化的接口
 	String rewrite_prompt = null;
 	String ask_prompt = null;
+    String rerankSys_prompt=null;
+    String fulltext=null;
+    boolean useRerank=false;
     // 1. 在类成员变量处增加线程池定义
-    private static final ExecutorService rerankExecutor = Executors.newFixedThreadPool(8);
+    // 建议替换 ChatSession.java 中的定义
+// 替换 ChatSession.java 中的线程池初始化代码
+    private static final ThreadPoolExecutor rerankExecutor = new ThreadPoolExecutor(
+            8,
+            16,
+            60L,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(100),
+            new ThreadFactory() {
+                private final AtomicInteger count = new AtomicInteger(1);
+                public Thread newThread(Runnable r) {
+                    return new Thread(r, "rerank-pool-" + count.getAndIncrement());
+                }
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy()
+    );
+
+    // 🌟 构造函数只接收核心能力组件
+    public ChatSession(ModelRouter router, EmbeddingClient embeddingClient, String tableName) {
+        this.router = router;
+        this.embeddingClient = embeddingClient;
+        this.tableName = tableName;
+    }
+
+    // 🌟 提供相应的 Setter 方法给 SessionManager 调用
+    public void setRewrite_prompt(String rewrite_prompt) { this.rewrite_prompt = rewrite_prompt; }
+    public void setAsk_prompt(String ask_prompt) { this.ask_prompt = ask_prompt; }
+    public void setRerankSys_prompt(String rerankSys_prompt) { this.rerankSys_prompt = rerankSys_prompt; }
+    public void setFulltext(String fulltext) { this.fulltext = fulltext; }
+    public void setUseRerank(boolean useRerank) { this.useRerank = useRerank; }
+/*
 	// 🌟 规范修改：构造函数要求外部把两个能力分别传进来
     public ChatSession(ModelRouter router, EmbeddingClient embeddingClient, String tableName) {
         this.router = router;
@@ -83,7 +121,16 @@ public class ChatSession {
         this.tableName = tableName; // 🌟 接收表名
 		rewrite_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
 		ask_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
-	}
+       // String rerankSys = "你是一个精确的文档评测专家。请判断提供的【内容】是否包含回答【问题】所需的关键信息。相关请打 0.8-1.0 分，完全不相关打 0.0-0.2 分。只输出数字。";
+        rerankSys_prompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
+        fulltext=loadKnowledgeBase("c:\\knowledge.txt");
+        useRerank=false;
+
+    }
+    public void setUseRerank(boolean useRerank) {
+        this.useRerank = useRerank;
+    }
+    */
 
 	void setSystemMessage(String system) {
 		// this.systemMessage = system;
@@ -465,7 +512,7 @@ public class ChatSession {
 
             System.out.println("🔍 检索到的候选列表 after Retrieve - 两阶段检索:");
             finalItems.forEach(item ->
-                    System.out.println("距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary)
+                    System.out.println("距离: " + formatDouble(item.distance) + " 分类:"+item.category+" | 摘要: " + item.summary)
             );
             // 步骤 3: Validate - 结果校验与拦截
             if (finalItems.isEmpty()) return handleEmptyResult(processedText, ca);
@@ -537,7 +584,7 @@ public class ChatSession {
     private double calculateSemanticDistance(String query,String category,String summary, String content) {
         //String rerankSys = "你是一个文档匹配专家。判断【内容】能否回答【问题】。只输出一个 0.0 到 1.0 的分数，1.0代表最相关，不要输出任何多余解释。";
         // 修改 rerankSys，让要求更明确
-        String rerankSys = "你是一个精确的文档评测专家。请判断提供的【内容】是否包含回答【问题】所需的关键信息。相关请打 0.8-1.0 分，完全不相关打 0.0-0.2 分。只输出数字。";
+       // String rerankSys = "你是一个精确的文档评测专家。请判断提供的【内容】是否包含回答【问题】所需的关键信息。相关请打 0.8-1.0 分，完全不相关打 0.0-0.2 分。只输出数字。";
         String rerankUserNouse = "【问题】：" + query + "\n【内容】：" + content;
         // 拼接完整的参考资料上下文
         String rerankUser = "【用户问题】：" + query + "\n" +
@@ -546,7 +593,7 @@ public class ChatSession {
                 "  - 摘要：" + summary + "\n" +
                 "  - 内容：" + content;
         try {
-            String scoreRaw = router.reranker().generate(rerankSys, rerankUser).trim();
+            String scoreRaw = router.reranker().generate(rerankSys_prompt, rerankUser).trim();
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(\\.\\d+)?)").matcher(scoreRaw);
             if (m.find()) {
                 double score = Double.parseDouble(m.group(1));
@@ -645,6 +692,12 @@ public class ChatSession {
                 System.out.println("距离: " + formatDouble(item.distance )+ "分类: " + item.category + "分类| 摘要: " + item.summary)
         );
 
+
+        if (!useRerank) {
+        // 🌟 不升模型方案：直接信任向量检索的前 3 名，彻底跳过 Rerank
+        System.out.println("⚠️ 混合模式性能优化：跳过本地 1.5b 精排，直接返回粗排结果。");
+        return allCandidates.subList(0, Math.min(allCandidates.size(), 3));
+        }
         List<SearchService.KnowledgeItem> fastTrackItems = new ArrayList<>(); // 快道池
         List<SearchService.KnowledgeItem> slowPool = new ArrayList<>();      // 待定池
 
@@ -1023,5 +1076,104 @@ public class ChatSession {
     public static String formatDouble(double value) {
         // %.4f 表示保留 4 位小数
         return String.format("%.2f", value);
+    }
+    /**
+     * 全量知识库模式 (Stuffing Mode)
+     * 逻辑：重写问题 -> 加载全量知识 -> 注入 System Prompt -> 生成回答
+     */
+    public ChatAnswer askFullContext(String text) {
+        System.out.println("🚀 执行全量知识库 Stuffing 流程 (askFullContext)...");
+        ChatAnswer ca = new ChatAnswer(-1, null);
+
+        // 1. 预处理：合法性检查与长度截断
+        if (text == null || text.trim().isEmpty()) {
+            ca.code = -1; ca.answer = "客户问题为空"; return ca;
+        }
+        String processedText = (text.length() > MAX_MESSAGE_LENGTH) ? text.substring(0, MAX_MESSAGE_LENGTH) : text;
+
+        try {
+            // 2. 步骤 1: Rewrite - 结合历史上下文生成优化查询
+            // 确保在多轮对话中能够正确指代（如“他”、“那个”）
+            String optimizedQuery = performQueryRewrite(processedText);
+
+            // 3. 步骤 2: 加载全量知识库内容
+            // 路径建议与你之前的 QwenFinalAsk 测试保持一致
+
+            if (fulltext==null||fulltext.trim().length()<10) {
+                ca.code = -404;
+                ca.answer = "知识库内容为空或加载失败，请检查";
+                return ca;
+            }
+
+            // 4. 步骤 3: 记录轻量化历史 (仅限 queryHistory)
+            // 关键：不使用 recordQueryHistory(processedText, finalItems)，防止历史记录膨胀
+            queryHistory.addMessage("User", processedText);
+            queryHistory.addMessage("Context", "【全量知识库模式】");
+            queryHistory.trim(MAX_QUERY_HISTORY);
+            long chatStart = System.currentTimeMillis();
+            // 5. 步骤 4: 执行最终对话并生成答案
+            // 注入 fullKnowledge 到 System Message，并发送优化后的问题
+            String ans = executeFinalChat(fulltext, optimizedQuery);
+            long chatDuration = System.currentTimeMillis() - chatStart;
+
+            System.out.println("⏱️ [Step 2] AI 生成答案耗时: " + chatDuration + " ms");
+            if (ans != null) {
+                ca.answer = ans;
+                ca.code = 0;
+            } else {
+                ca.code = -500;
+                ca.answer = "AI 响应为空，请稍后重试。";
+            }
+            return ca;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            ca.code = -1;
+            ca.answer = "机器人系统故障: " + e.getMessage();
+            return ca;
+        }
+    }
+
+    /**
+     * 核心配套：独立的知识库加载函数
+     * 解决 GBK 环境下读取 UTF-8 文件的编码与 BOM 问题
+     */
+
+    /**
+     * 独立的知识库加载函数
+     * 强制使用 UTF-8 编码读取，并自动处理 Windows 记事本可能产生的 BOM 头
+     * @param filePath 知识库文件路径 (如 c:\\knowledge.txt)
+     * @return 干净的知识库字符串内容
+     */
+    private String loadKnowledgeBase(String filePath) {
+        try {
+            java.io.File file = new java.io.File(filePath);
+            if (!file.exists()) {
+                System.err.println("❌ 知识库文件不存在: " + filePath);
+                return "";
+            }
+
+            // 1. 显式按字节读取所有内容，防止受 JVM 默认编码 (GBK) 干扰
+            byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(filePath));
+
+            // 2. 将字节数组转换为 UTF-8 字符串
+            String content = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+
+            // 3. 处理 UTF-8 BOM (Byte Order Mark, \uFEFF)
+            // 这是导致 "Input length = 1" 或 JSON 解析错误的常见元凶
+            if (content.length() > 0 && content.charAt(0) == '\uFEFF') {
+                content = content.substring(1);
+            }
+
+            System.out.println("📚 知识库加载成功: " + filePath + " (长度: " + content.length() + " 字符)");
+            return content.trim();
+
+        } catch (java.io.IOException e) {
+            System.err.println("💥 加载知识库时发生 I/O 异常: " + e.getMessage());
+            return "";
+        } catch (Exception e) {
+            System.err.println("💥 加载知识库时发生未知错误: " + e.getMessage());
+            return "";
+        }
     }
 }
