@@ -61,144 +61,213 @@ import okhttp3.ConnectionPool;
 
 	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
 	    public static void init(String type) {
-	        if (type == null) {
-	            throw new IllegalArgumentException("模型类型不能为空！");
-	        }
+            try {
+                if (type == null) {
+                    throw new IllegalArgumentException("模型类型不能为空！");
+                }
 
-            if (type.equalsIgnoreCase("openai")) {
-                System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
-                OpenAIClient client = new OpenAIClient(
-                        System.getenv("OPENAI_API_KEY"),
-                        "gpt-4o-mini",
-                        "text-embedding-3-small",
-                        CLIENT
-                );
-                // OpenAI 场景下三个角色暂时都用同一个客户端
-                ACTIVE_ROUTER = new ModelRouter(client, client, client);
-                ACTIVE_LLM    = client;
-                ACTIVE_EMBED  = client;
-                ACTIVE_TABLE  = "enterprise_knowledge_1536";
-                System.out.println("✅ OpenAI 模型客户端已挂载");
+                if (type.equalsIgnoreCase("openai")) {
+                    System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
+                    OpenAIClient client = new OpenAIClient(
+                            System.getenv("OPENAI_API_KEY"),
+                            "gpt-4o-mini",
+                            "text-embedding-3-small",
+                            CLIENT
+                    );
+                    // OpenAI 场景下三个角色暂时都用同一个客户端
+                    ACTIVE_ROUTER = new ModelRouter(client, client, client);
+                    ACTIVE_LLM = client;
+                    ACTIVE_EMBED = client;
+                    ACTIVE_TABLE = "enterprise_knowledge_1536";
+                    System.out.println("✅ OpenAI 模型客户端已挂载");
 
-            } else if (type.equalsIgnoreCase("deepseek")) {
-                System.out.println("⚙️ 暂未完全实现 DeepSeek...");
+                } else if (type.equalsIgnoreCase("deepseek")) {
+                    System.out.println("⚙️ 暂未完全实现 DeepSeek...");
 
-            } else if (type.equalsIgnoreCase("ollama")) {
-                System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
-                OllamaClient ollamaClient = new OllamaClient(
-                        "http://192.168.1.23:11434/v1",
-                        "qwen2.5:7b",
-                        "nomic-embed-text",
-                        CLIENT,
-                        null
-                );
-                // 本地场景：三个角色共用同一模型（本地无 turbo/plus 之分）
-                ACTIVE_ROUTER = new ModelRouter(ollamaClient, ollamaClient, ollamaClient);
-                ACTIVE_LLM    = ollamaClient;
-                ACTIVE_EMBED  = ollamaClient;
-                ACTIVE_TABLE  = "enterprise_knowledge_768";
+                } else if (type.equalsIgnoreCase("ollama")) {
+                    System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
+                    OllamaClient ollamaClient = new OllamaClient(
+                            "http://192.168.1.23:11434/v1",
+                            "qwen2.5:7b",
+                            "nomic-embed-text",
+                            CLIENT,
+                            null
+                    );
+                    // 本地场景：三个角色共用同一模型（本地无 turbo/plus 之分）
+                    ACTIVE_ROUTER = new ModelRouter(ollamaClient, ollamaClient, ollamaClient);
+                    ACTIVE_LLM = ollamaClient;
+                    ACTIVE_EMBED = ollamaClient;
+                    ACTIVE_TABLE = "enterprise_knowledge_768";
 
-            } else if (type.equalsIgnoreCase("qwen-online")) {
-                System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
+                } else if (type.equalsIgnoreCase("qwen-online")) {
+                    System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
 
-                String aliyunApiKey = System.getenv("QWEN_API_KEY");
-                String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+                    String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-                // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
-                OllamaClient turboClient = new OllamaClient(
-                        aliyunBaseUrl,
-                        "qwen-turbo",          // 快速、低成本
-                        "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
-                        CLIENT,
-                        aliyunApiKey
-                );
+                    // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
+                    OllamaClient turboClient = new OllamaClient(
+                            aliyunBaseUrl,
+                            "qwen-turbo",          // 快速、低成本
+                            "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
+                            CLIENT,
+                            aliyunApiKey
+                    );
 
-                // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
-                OllamaClient plusClient = new OllamaClient(
-                        aliyunBaseUrl,
-                        "qwen-plus",           // 高质量回答
-                        "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
-                        CLIENT,
-                        aliyunApiKey
-                );
+                    // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
+                    OllamaClient plusClient = new OllamaClient(
+                            aliyunBaseUrl,
+                            "qwen-plus",           // 高质量回答
+                            "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
+                            CLIENT,
+                            aliyunApiKey
+                    );
 
-                // ── 组装路由器 ────────────────────────────────────────────────────
-                ACTIVE_ROUTER = ModelRouter.of(turboClient, plusClient);
-                //   rewrite → turboClient
-                //   rerank  → turboClient
-                //   final   → plusClient
+                    // ── 组装路由器 ────────────────────────────────────────────────────
+                    ACTIVE_ROUTER = ModelRouter.of(turboClient, plusClient);
+                    //   rewrite → turboClient
+                    //   rerank  → turboClient
+                    //   final   → plusClient
 
-                ACTIVE_LLM   = plusClient;   // 兼容旧 warmUp 路径
-                ACTIVE_EMBED = turboClient;  // embedding 由 turbo 负责
-                ACTIVE_TABLE = "enterprise_knowledge_qwen_1024";
+                    ACTIVE_LLM = plusClient;   // 兼容旧 warmUp 路径
+                    ACTIVE_EMBED = turboClient;  // embedding 由 turbo 负责
+                    ACTIVE_TABLE = "enterprise_knowledge_qwen_1024";
 
-                System.out.println("✅ Qwen 路由客户端已挂载：rewrite/rerank → turbo | finalAsk → plus");
-                System.out.println("   请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
+                    System.out.println("✅ Qwen 路由客户端已挂载：rewrite/rerank → turbo | finalAsk → plus");
+                    System.out.println("   请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
 
-            }  else if (type.equalsIgnoreCase("hybrid") || type.equalsIgnoreCase("混合模式")) {
-                // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
-                System.out.println("🔄 正在初始化混合模式...");
-                System.out.println("   架构: 本地 Ollama (rewrite/rerank) + 云端 Qwen-Plus (final)");
+                } else if (type.equalsIgnoreCase("hybrid") || type.equalsIgnoreCase("混合模式")) {
+                    // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
+                    System.out.println("🔄 正在初始化混合模式...");
+                    System.out.println("   架构: 本地 Ollama (rewrite/rerank) + 云端 Qwen-Plus (final)");
 
-                String aliyunApiKey = System.getenv("QWEN_API_KEY");
-                String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+                    String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-                // ── 本地 Ollama 客户端（负责 rewrite + rerank）────────────────
-                OllamaClient localClient = new OllamaClient(
-                        "http://localhost:11434/v1",      // 本地 Ollama 地址
-                        "qwen2.5:1.5b",                     // 本地模型
-                        "nomic-embed-text",               // 本地向量模型
-                        CLIENT,
-                        null                              // 本地无需 API Key
-                );
+                    // ── 本地 Ollama 客户端（负责 rewrite + rerank）────────────────
+                    OllamaClient localClient = new OllamaClient(
+                            "http://localhost:11434/v1",      // 本地 Ollama 地址
+                            "qwen2.5:1.5b",                     // 本地模型
+                            "nomic-embed-text",               // 本地向量模型
+                            CLIENT,
+                            null                              // 本地无需 API Key
+                    );
 
-                // ── 阿里云客户端（仅负责 final）──────────────────────────────
-                OllamaClient cloudClient = new OllamaClient(
-                        aliyunBaseUrl,
-                        "qwen-plus",                      // 高质量模型
-                        "text-embedding-v3",              // 占位，实际用本地 embed
-                        CLIENT,
-                        aliyunApiKey
-                );
+                    // ── 阿里云客户端（仅负责 final）──────────────────────────────
+                    OllamaClient cloudClient = new OllamaClient(
+                            aliyunBaseUrl,
+                            "qwen-plus",                      // 高质量模型
+                            "text-embedding-v3",              // 占位，实际用本地 embed
+                            CLIENT,
+                            aliyunApiKey
+                    );
 
-                // ── 组装路由器 ────────────────────────────────────────────────
-                ACTIVE_ROUTER = new ModelRouter(
-                        localClient,  // rewrite → 本地 Ollama
-                        localClient,  // rerank  → 本地 Ollama
-                        cloudClient   // final   → 阿里云 qwen-plus
-                );
+                    // ── 组装路由器 ────────────────────────────────────────────────
+                    ACTIVE_ROUTER = new ModelRouter(
+                            localClient,  // rewrite → 本地 Ollama
+                            localClient,  // rerank  → 本地 Ollama
+                            cloudClient   // final   → 阿里云 qwen-plus
+                    );
 
-                ACTIVE_LLM   = cloudClient;   // 兼容旧代码
-                ACTIVE_EMBED = localClient;   // 使用本地 embed
-                ACTIVE_TABLE = "enterprise_knowledge_768"; // 本地向量维度
+                    ACTIVE_LLM = cloudClient;   // 兼容旧代码
+                    ACTIVE_EMBED = localClient;   // 使用本地 embed
+                    ACTIVE_TABLE = "enterprise_knowledge_768"; // 本地向量维度
 
-                System.out.println("✅ 混合模式已激活");
-                System.out.println("   ├─ Rewrite:  本地 Ollama Qwen2.5:1.5b");
-                System.out.println("   ├─ Rerank:   本地 Ollama Qwen2.5:1.5b");
-                System.out.println("   ├─ Final:    云端 Qwen-Plus");
-                System.out.println("   └─ Embed:    本地 nomic-embed-text (768维)");
-                System.out.println("");
-                System.out.println("💰 成本节省: ~40% (仅 final 调用云端)");
-                System.out.println("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
+                    System.out.println("✅ 混合模式已激活");
+                    System.out.println("   ├─ Rewrite:  本地 Ollama Qwen2.5:1.5b");
+                    System.out.println("   ├─ Rerank:   本地 Ollama Qwen2.5:1.5b");
+                    System.out.println("   ├─ Final:    云端 Qwen-Plus");
+                    System.out.println("   └─ Embed:    本地 nomic-embed-text (768维)");
+                    System.out.println("");
+                    System.out.println("💰 成本节省: ~40% (仅 final 调用云端)");
+                    System.out.println("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
 
-            } else {
-                throw new IllegalArgumentException("不支持的大模型类型: " + type);
+                } else if (type.equalsIgnoreCase("hybrid2")) {
+                    // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
+                    System.out.println("🔄 正在初始化混合模式...");
+                    System.out.println("   架构: 本地 qwenonline (rewrite/rerank) + 云端 Qwen-Plus (final)");
+
+                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+                    String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+
+                    // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
+                    OllamaClient turboClient = new OllamaClient(
+                            aliyunBaseUrl,
+                            "qwen-turbo",          // 快速、低成本
+                            "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
+                            CLIENT,
+                            aliyunApiKey
+                    );
+
+                    // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
+                    OllamaClient plusClient = new OllamaClient(
+                            aliyunBaseUrl,
+                            "qwen-plus",           // 高质量回答
+                            "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
+                            CLIENT,
+                            aliyunApiKey
+                    );
+
+                    // ── 组装路由器 ────────────────────────────────────────────────
+                    ACTIVE_ROUTER = new ModelRouter(
+                            turboClient,  // rewrite → 本地 Ollama
+                            turboClient,  // rerank  → 本地 Ollama
+                            plusClient   // final   → 阿里云 qwen-plus
+                    );
+
+                    ACTIVE_LLM = plusClient;
+                    ACTIVE_EMBED = new DJLLocalClient();
+                    ACTIVE_TABLE = "enterprise_knowledge_1024"; // 本地向量维度
+
+                    System.out.println("✅ 混合模式已激活");
+                    System.out.println("   ├─ Rewrite:  turboClient");
+                    System.out.println("   ├─ Rerank:   turboClient");
+                    System.out.println("   ├─ Final:    云端 Qwen-Plus");
+                    System.out.println("   └─ Embed:    本地 DJLLocalClient");
+                    System.out.println("");
+                    System.out.println("💰 成本节省: ~40% (仅 final 调用云端)");
+                    System.out.println("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
+
+                } else {
+                    throw new IllegalArgumentException("不支持的大模型类型: " + type);
+                }
+
+                System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
+
+                // 🌟 统一在这里读取文件，只读一次
+                globalRewritePrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
+                globalAskPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
+                globalRerankPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
+
+                // 🌟 加载全量知识库，避免 GBK 乱码
+                globalFullText = loadKnowledgeBase("c:\\knowledge.txt");
+
+                System.out.println("✅ [System Init] 全局资源加载完成。");
+            } catch (Exception e) {
+
+                System.out.println("✅ [System Init] 全局资源加载error"+e);
+            }
+        }
+        public static EmbeddingClient createQwenTurboClient() {
+            // 1. 从环境变量获取 API KEY
+            String aliyunApiKey = System.getenv("QWEN_API_KEY");
+            if (aliyunApiKey == null || aliyunApiKey.isEmpty()) {
+                throw new RuntimeException("❌ 错误：环境变量 QWEN_API_KEY 未设置！");
             }
 
-            System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
+            String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-            // 🌟 统一在这里读取文件，只读一次
-            globalRewritePrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
-            globalAskPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
-            globalRerankPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
-
-            // 🌟 加载全量知识库，避免 GBK 乱码
-            globalFullText = loadKnowledgeBase("c:\\knowledge.txt");
-
-            System.out.println("✅ [System Init] 全局资源加载完成。");
-
+            // 2. 初始化你的 OllamaClient (它已经实现了 EmbeddingClient 接口)
+            // 对于 Ingestion 来说，只需要一个能算向量的客户端即可
+            // 我们使用 qwen-turbo 对应的配置，指定 text-embedding-v3
+            return new OllamaClient(
+                    aliyunBaseUrl,
+                    "qwen-turbo",          // 聊天模型占位
+                    "text-embedding-v3",   // 🌟 实际使用的 Embedding 模型
+                    CLIENT,                // 这里的 CLIENT 是你类里定义的静态 OkHttpClient
+                    aliyunApiKey
+            );
         }
-
         public static ChatSession getSession(String clientId) {
             // 🌟 增加一道安全防线：防止忘记调用 init()
             if (ACTIVE_ROUTER == null) {
@@ -217,7 +286,8 @@ import okhttp3.ConnectionPool;
                 session.setAsk_prompt(globalAskPrompt);
                 session.setRerankSys_prompt(globalRerankPrompt);
 
-                session.setUseRerank(false);
+                //session.setUseRerank(false);
+				session.setQueryMode("fullText");//fullText //retrieveOnly //retrieveRerank
 
                 sessions.put(clientId, session);
                 System.out.println("🆕 为客户端 [" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
@@ -345,9 +415,16 @@ import okhttp3.ConnectionPool;
             }
             System.out.println("⏳ 正在进行全链路预热 (rewriter + embed)...");
             try {
+                long start=System.currentTimeMillis();
                 ACTIVE_ROUTER.rewriter().generate("system", "hi");
+                ACTIVE_ROUTER.reranker().generate("system", "hi");
+                ACTIVE_ROUTER.finalLlm().generate("system", "hi");
+
                 ACTIVE_EMBED.embed("hello");
-                System.out.println("✅ 全链路连接池预热完成");
+
+
+
+                System.out.println("✅ 全链路连接池预热完成 t="+(System.currentTimeMillis()-start) );
             } catch (Exception e) {
                 System.err.println("⚠️ 预热过程中发生异常: " + e.getMessage());
             }

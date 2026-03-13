@@ -2,6 +2,7 @@ package com;
 
 import okhttp3.OkHttpClient;
 import org.apache.poi.ss.usermodel.*;
+
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,22 +12,6 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.lucene.index.VectorSimilarityFunction;
-import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
-import ai.djl.repository.zoo.Criteria;
-import ai.djl.repository.zoo.ZooModel;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.*;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.index.VectorSimilarityFunction;
-import java.io.File;
-import java.nio.file.*;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.util.*;
 
 /**
  * 知识库自动化导入服务
@@ -35,12 +20,12 @@ import java.util.*;
  * - TXT: 分类 || 摘要 || 内容
  * - XLSX: A列(分类), B列(摘要), C列(内容)
  */
-public class IngestionService {
+public class IngestionService4 {
     private static final String DB_URL = "jdbc:postgresql://localhost:5432/postgres";
     private static final String DB_USER = "postgres";
     private static final String DB_PASS = "call";
     private static final OkHttpClient CLIENT = new OkHttpClient();
-    private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
+
     public static void main(String[] args) throws Exception {
 
         // ==========================================
@@ -48,33 +33,12 @@ public class IngestionService {
         // ==========================================
         // 自动识别后缀，你可以将此处改为 .xlsx 进行测试
         String filePath = "e:\\eit\\openai\\publishknowledge.xlsx";
-        filePath = "e:\\eit\\openai\\publishknowledge.txt";
         String aiType = "qwen-online";
-        aiType="local";
         //aiType = "hybrid"; // 修改为 hybrid
         System.out.println("🚀 启动知识库导入流水线...");
+
+        EmbeddingClient embedClient;
         String tableName;
-        // 1. 初始化客户端
-        EmbeddingClient embedClient  ;
-
-
-        // 2. 初始化环境（清空旧数据）
-        if (aiType.equalsIgnoreCase("local")) {
-            embedClient = new DJLLocalClient();
-            tableName = "N/A"; // 本地模式不需要表名
-            clearLuceneFolder(LUCENE_PATH);
-
-        } else {
-            //clearPostgresTable("enterprise_knowledge_qwen_1024");  we use upsert
-            embedClient = SessionManager.createQwenTurboClient();
-            // 自动根据维度匹配表名，防止 768/1024 混淆
-            tableName = "enterprise_knowledge_" + (embedClient.getDimension() == 768 ? "768" : "qwen_1024");
-        }
-        System.out.println("🚀 模式: " + aiType + " | 维度: " + embedClient.getDimension());
-
-
-
-        /*
         if ("hybrid".equalsIgnoreCase(aiType)) {
             // ── 1. 使用本地 Ollama 进行向量化 ──────────────────────
             // 采样 nomic-embed-text (768维)
@@ -105,9 +69,8 @@ public class IngestionService {
         } else {
             throw new IllegalArgumentException("当前配置仅支持 qwen-online 演示");
         }
-        */
 
-      //  System.out.println("🗄️ 目标数据库表: " + tableName);
+        System.out.println("🗄️ 目标数据库表: " + tableName);
         System.out.println("📂 正在解析文件: " + filePath);
 
         // 🌟 2. 根据后缀名选择读取办法
@@ -120,15 +83,6 @@ public class IngestionService {
             System.err.println("❌ 不支持的文件格式，仅限 .txt 或 .xlsx");
             return;
         }
-        // 1. 在循环外统一初始化 Lucene Writer (如果需要)
-        IndexWriter luceneWriter = null;
-        if (aiType.equalsIgnoreCase("local")) {
-            IndexWriterConfig config = new IndexWriterConfig(new StandardAnalyzer())
-                    .setOpenMode(IndexWriterConfig.OpenMode.CREATE);
-            luceneWriter = new IndexWriter(FSDirectory.open(Paths.get(LUCENE_PATH)), config);
-        }
-
-
         //clearDatabase(tableName);
         int successCount = 0;
         for (int i = 0; i < entries.size(); i++) {
@@ -162,85 +116,35 @@ public class IngestionService {
 // 优化逻辑：通过显式的语义引导，让向量具备更强的身份属性
                 // 优化后的写法：去除干扰词，强化“分类”与“内容”的绑定关系
                 //turbo-plus模式
-                String semanticText = String.format("分类：【%s】。摘要：%s。内容：%s",
+                 String semanticText = String.format("分类：【%s】。摘要：%s。内容：%s",
                         category, summary, content);
 
-                double[] vector = embedClient.embed(semanticText);
+
                 // 修改 IngestionService.java
 // 原逻辑：String.format("分类：【%s】。摘要：%s。内容：%s", category, summary, content);
 // 优化逻辑：弱化分类标签，直接强调核心内容，减少噪声干扰
-                // String semanticText = String.format("内容主题：%s。详细描述：%s", summary, content);
+               // String semanticText = String.format("内容主题：%s。详细描述：%s", summary, content);
 
-// --- 4. 分支存入 ---
-                if ("local".equalsIgnoreCase(aiType)) {
-// 🌟 修正：使用循环外的写入器
-                    Document doc = new Document();
-                    doc.add(new StringField("id", entry.id, Field.Store.YES));
-                    doc.add(new StringField("category", category, Field.Store.YES));
-                    doc.add(new StoredField("summary", summary));
-                    doc.add(new StoredField("content", content));
-                    doc.add(new KnnVectorField("embedding", toFloatArray(vector), VectorSimilarityFunction.COSINE));
-                    luceneWriter.addDocument(doc);
+                double[] vector = embedClient.embed(semanticText);
 
-                    if(successCount%20==0){
-                        System.out.println("✅ 正在提交索引...");
-                        luceneWriter.commit(); // 🌟 必须手动提交，否则 searchLucene 找不到索引
+                //double[] vector = embedClient.embed(category + " " + summary + " " + content);
 
-                        System.out.println("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
-                    }
 
-                } else {
-                    // 存入 Postgres (调用你原来的 Upsert)
+                    // 🌟 调用新的 Upsert 方法
                     upsertToDatabase(tableName, entry, vector);
+                    System.out.println("   ✅ ID [" + entry.id + "] 处理成功 (Insert/Update)");
+                    successCount++;
+                } catch (Exception e) {
+                    System.err.println("   ❌ ID [" + entry.id + "] 失败: " + e.getMessage());
                 }
-
-
-                System.out.println("   ✅ ID [" + entry.id + "] 处理成功 (Insert/Update)");
-                successCount++;
-            } catch (Exception e) {
-                System.err.println("   ❌ ID [" + entry.id + "] 失败: " + e.getMessage());
-            }
         }
 
         System.out.println("✨ 导入完成！共成功处理 " + successCount + " 条知识。");
-        // 在 IngestionService.java 的 main 方法末尾
-// ... 循环处理完 10 条数据后
-        if ("local".equalsIgnoreCase(aiType)) {
-            System.out.println("✅ 正在提交索引...");
-            luceneWriter.commit(); // 🌟 必须手动提交，否则 searchLucene 找不到索引
-            luceneWriter.close();  // 🌟 关闭时也会自动提交
-        }
-        System.out.println("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
-
 
         CLIENT.dispatcher().executorService().shutdown();
         CLIENT.connectionPool().evictAll();
     }
 
-    /**
-     * 适配你原逻辑的 Lucene 单条存入
-     */
-    private static void saveSingleToLucene(KnowledgeEntry entry, String cat, String sum, String cont, double[] vector) throws Exception {
-        // 转换 double[] 为 float[] 以适配 Lucene KNN
-        float[] fVec = new float[vector.length];
-        for (int i = 0; i < vector.length; i++) fVec[i] = (float) vector[i];
-
-        // 注意：实际生产中建议在循环外开启一次 IndexWriter，
-        // 这里为了演示“简单点”，保持了单条打开逻辑，但大数据量下建议优化为批量
-        try (FSDirectory dir = FSDirectory.open(Paths.get(LUCENE_PATH));
-             IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(new StandardAnalyzer()).setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND))) {
-
-            Document doc = new Document();
-            doc.add(new StringField("id", entry.id, Field.Store.YES));
-            doc.add(new StringField("category", cat, Field.Store.YES));
-            doc.add(new StoredField("summary", sum));
-            doc.add(new StoredField("content", cont));
-            doc.add(new KnnVectorField("embedding", fVec, VectorSimilarityFunction.COSINE));
-
-            writer.addDocument(doc);
-            writer.commit();
-        }
-    }
     /**
      * XLSX 导入：按列读取 (A:分类, B:摘要, C:内容)
      */
@@ -321,30 +225,20 @@ public class IngestionService {
      * TXT 导入：原有逻辑
      */
     private static List<KnowledgeEntry> readFromTxt(String filePath) throws Exception {
-        // 建议增加编码指定，确保读取正确
         List<String> lines = Files.readAllLines(Paths.get(filePath), StandardCharsets.UTF_8);
         List<KnowledgeEntry> list = new ArrayList<>();
-
         for (String line : lines) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
 
-            // 🌟 修改：不要限制分割数量，或者设为 4
-            String[] parts = trimmed.split("\\|\\|", 4);
-
-            if (parts.length >= 4) {
-                list.add(new KnowledgeEntry(
-                        parts[0].trim(), // ID
-                        parts[1].trim(), // 分类
-                        parts[2].trim(), // 摘要
-                        parts[3].trim()  // 内容
-                ));
-            } else {
-                System.out.println("⚠️ 跳过格式错误的行: " + trimmed);
+            String[] parts = trimmed.split("\\|\\|", 3);
+            if (parts.length >= 3) {
+                list.add(new KnowledgeEntry(parts[0].trim(), parts[1].trim(), parts[2].trim(), parts[3].trim())  );
             }
         }
         return list;
     }
+
     private static String getCellValue(Cell cell) {
         if (cell == null) return "";
 
@@ -479,18 +373,5 @@ public class IngestionService {
             this.summary = s;
             this.content = ct;
         }
-    }
-    private static void clearLuceneFolder(String pathStr) throws Exception {
-        Path path = Paths.get(pathStr);
-        if (Files.exists(path)) {
-            Files.walk(path).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-            System.out.println("⚠️ 已物理清空 Lucene 目录");
-        }
-    }
-
-    private static float[] toFloatArray(double[] d) {
-        float[] f = new float[d.length];
-        for (int i = 0; i < d.length; i++) f[i] = (float) d[i];
-        return f;
     }
 }

@@ -81,7 +81,7 @@ public class ChatSession {
 	String ask_prompt = null;
     String rerankSys_prompt=null;
     String fulltext=null;
-    boolean useRerank=false;
+    String queryMode="fullText";
     // 1. 在类成员变量处增加线程池定义
     // 建议替换 ChatSession.java 中的定义
 // 替换 ChatSession.java 中的线程池初始化代码
@@ -112,7 +112,8 @@ public class ChatSession {
     public void setAsk_prompt(String ask_prompt) { this.ask_prompt = ask_prompt; }
     public void setRerankSys_prompt(String rerankSys_prompt) { this.rerankSys_prompt = rerankSys_prompt; }
     public void setFulltext(String fulltext) { this.fulltext = fulltext; }
-    public void setUseRerank(boolean useRerank) { this.useRerank = useRerank; }
+    //public void setUseRerank(boolean useRerank) { this.useRerank = useRerank; }
+    public void setQueryMode(String queryMode) { this.queryMode = queryMode; }
 /*
 	// 🌟 规范修改：构造函数要求外部把两个能力分别传进来
     public ChatSession(ModelRouter router, EmbeddingClient embeddingClient, String tableName) {
@@ -155,7 +156,7 @@ public class ChatSession {
 		history.trim(MAX_HISTORY);
 		// trimHistory();
 	}
-	public ChatAnswer ask(String text) {
+	public ChatAnswer askOLD(String text) {
 	    System.out.println("✅ Agent-mode ask AI (Function Calling)...");
 	    if (text == null || text.isEmpty()) {
 	        ca.code = -1; ca.answer = "客户问题为空"; return ca;
@@ -409,6 +410,7 @@ public class ChatSession {
                 summaryContextBuilder.append(String.format("%d. %s\n", i + 1, item.summary));
             }
 
+
             String matchedFullContext = fullContextBuilder.toString();
             String matchedSummaryContext = summaryContextBuilder.toString();
 
@@ -488,7 +490,13 @@ public class ChatSession {
         history.addMessage("assistant", assistantText);
         history.trim(MAX_HISTORY);
     }
+    public ChatAnswer ask(String text) {
+        if("fullText".equalsIgnoreCase(queryMode)){
+            return askFullContext(text);
+        }else
+            return ask3(text);
 
+    }
 
     public ChatAnswer ask3(String text) {
         System.out.println("🚀 执行高级 RAG 流程 (重构版 ask3)...");
@@ -693,10 +701,10 @@ public class ChatSession {
         );
 
 
-        if (!useRerank) {
+        if ("retrieveOnly".equalsIgnoreCase(queryMode)) {
         // 🌟 不升模型方案：直接信任向量检索的前 3 名，彻底跳过 Rerank
-        System.out.println("⚠️ 混合模式性能优化：跳过本地 1.5b 精排，直接返回粗排结果。");
-        return allCandidates.subList(0, Math.min(allCandidates.size(), 3));
+         System.out.println("⚠️ 混合模式性能优化：跳过 精排，直接返回粗排结果。");
+         return allCandidates.subList(0, Math.min(allCandidates.size(), 3));
         }
         List<SearchService.KnowledgeItem> fastTrackItems = new ArrayList<>(); // 快道池
         List<SearchService.KnowledgeItem> slowPool = new ArrayList<>();      // 待定池
@@ -1077,6 +1085,7 @@ public class ChatSession {
         // %.4f 表示保留 4 位小数
         return String.format("%.2f", value);
     }
+
     /**
      * 全量知识库模式 (Stuffing Mode)
      * 逻辑：重写问题 -> 加载全量知识 -> 注入 System Prompt -> 生成回答

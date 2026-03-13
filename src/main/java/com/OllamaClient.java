@@ -22,7 +22,17 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         this.httpClient = httpClient;
         this.apiKey = apiKey; 
     }
-
+    // 在 OllamaClient.java 中添加
+    @Override
+    public int getDimension() {
+        // 如果是阿里的 text-embedding-v3，默认维度通常是 1024
+        // 如果你使用的是 v2 或者是其他模型，请按需修改
+        return 1024;
+    }
+    @Override
+    public String modeType() {
+        return "online"; // 声明自己是在线 API
+    }
     @Override
     public String chat(ArrayNode messages) throws Exception {
         ObjectNode root = mapper.createObjectNode();
@@ -113,27 +123,36 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
 
     @Override
     public double[] embed(String text) throws Exception {
-        ObjectNode root = mapper.createObjectNode();
-        root.put("model", this.embedModel);
-        root.put("input", text);
-     // 🌟 智能兼容逻辑
-        // 1. 如果是阿里百炼在线版 (text-embedding-v3)
-        if ("text-embedding-v3".equals(this.embedModel) && this.apiKey != null) {
-            root.put("dimensions", 1024); // 
+        // 1. 记录开始时间 (Record start time)
+        long startTime = System.nanoTime();
+
+        try {
+            ObjectNode root = mapper.createObjectNode();
+            root.put("model", this.embedModel);
+            root.put("input", text);
+
+            if ("text-embedding-v3".equals(this.embedModel) && this.apiKey != null) {
+                root.put("dimensions", 1024);
+            }
+
+            String rawResponse = sendRequest(baseUrl + "/embeddings", root);
+
+            JsonNode rootNode = mapper.readTree(rawResponse);
+            JsonNode embeddingNode = rootNode.path("data").get(0).path("embedding");
+            double[] vector = new double[embeddingNode.size()];
+            for (int i = 0; i < embeddingNode.size(); i++) {
+                vector[i] = embeddingNode.get(i).asDouble();
+            }
+            return vector;
+
+        } finally {
+            // 2. 记录结束时间并计算耗时 (Record end time and calculate duration)
+            long endTime = System.nanoTime();
+            long durationMs = (endTime - startTime) / 1_000_000; // 转换为毫秒 (Convert to milliseconds)
+
+            // 3. 打印或记录日志 (Log the performance metrics)
+            System.out.printf("Embedding completed in %d ms for model: %s%n", durationMs, this.embedModel);
         }
-        // 2. 如果是本地 Ollama (如 nomic-embed-text)，不加 dimensions 参数
-        // 这样它会保持原有的 768 维逻辑，不会报错
-        // 🌟 修复点：调用内部的 sendRequest 而不是手动构建 Request
-        // sendRequest 会自动根据是否存在 apiKey 添加 Authorization 头
-        String rawResponse = sendRequest(baseUrl + "/embeddings", root);
-        
-        JsonNode rootNode = mapper.readTree(rawResponse);
-        JsonNode embeddingNode = rootNode.path("data").get(0).path("embedding");
-        double[] vector = new double[embeddingNode.size()];
-        for (int i = 0; i < embeddingNode.size(); i++) {
-            vector[i] = embeddingNode.get(i).asDouble();
-        }
-        return vector;
     }
 
     private String sendRequest(String url, ObjectNode bodyNode) throws Exception {
