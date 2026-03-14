@@ -28,7 +28,10 @@ public class ModelRouter {
     private final LlmClient rewriteClient;
     private final LlmClient rerankClient;
     private final LlmClient finalClient;
-
+    private String rerankPrompt = ""; // 绑定在路由层
+    public void setRerankPrompt(String prompt) {
+        this.rerankPrompt = prompt;
+    }
     /**
      * 构造路由器。
      *
@@ -68,14 +71,19 @@ public class ModelRouter {
             case FINAL   -> finalClient;
         };
     }
-
+    /**
+     * 对外暴露的 rerank 入口，prompt 已内聚，调用方无感知
+     */
+    public double rerank(String query, String document) throws Exception {
+        return rerankClient.rerank(query, document, rerankPrompt);
+    }
     // ── 语义糖快捷方法，提升调用处可读性 ──────────────────────────────────────
 
     /** 获取负责查询重写的客户端 */
     public LlmClient rewriter()  { return rewriteClient; }
 
     /** 获取负责精排评分的客户端 */
-    public LlmClient reranker()  { return rerankClient;  }
+   // public LlmClient reranker()  { return rerankClient;  }
 
     /** 获取负责最终回答的客户端 */
     public LlmClient finalLlm()  { return finalClient;   }

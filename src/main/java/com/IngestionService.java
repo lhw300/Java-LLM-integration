@@ -40,7 +40,7 @@ public class IngestionService {
     private static final String DB_USER = "postgres";
     private static final String DB_PASS = "call";
     private static final OkHttpClient CLIENT = new OkHttpClient();
-    private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
+    private static final String LUCENE_PATH = "E:\\AI\\lucene_index";
     public static void main(String[] args) throws Exception {
 
         // ==========================================

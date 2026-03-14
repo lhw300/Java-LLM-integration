@@ -14,7 +14,7 @@ import java.util.List;
 public class SearchService {
     private static HikariDataSource dataSource;
     private static SearcherManager luceneSearcherManager;
-    private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
+   // private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
 
     // 标志位，确保初始化只执行一次
     private static boolean isInitialized = false;
@@ -42,7 +42,7 @@ public class SearchService {
             // 1. 初始化 Lucene 资源
             try {
                 if (luceneSearcherManager == null) {
-                    FSDirectory dir = FSDirectory.open(Paths.get(LUCENE_PATH));
+                    FSDirectory dir = FSDirectory.open(Paths.get(SessionManager.LUCENE_PATH));
                     luceneSearcherManager = new SearcherManager(dir, new SearcherFactory());
                     System.out.println("✅ 已按需初始化 Lucene SearcherManager");
                 }
@@ -97,10 +97,10 @@ public class SearchService {
         List<KnowledgeItem> results = new ArrayList<>();
 
         // 💡 生产点：LUCENE_PATH 需对应 IngestionService 中的常量路径
-        String lucenePath = "E:\\EIT\\openai\\lucene_index";
+       // String lucenePath = "E:\\EIT\\openai\\lucene_index";
 
         // 💡 注意：在高并发生产场景，建议将 reader 设为全局单例，不要在方法内 try-with-resources 打开
-        try (FSDirectory dir = FSDirectory.open(Paths.get(lucenePath));
+        try (FSDirectory dir = FSDirectory.open(Paths.get(SessionManager.LUCENE_PATH));
              DirectoryReader reader = DirectoryReader.open(dir)) {
 
             IndexSearcher searcher = new IndexSearcher(reader);

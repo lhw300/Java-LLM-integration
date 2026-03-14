@@ -20,7 +20,14 @@ import okhttp3.ConnectionPool;
 
 	public class SessionManager {
 
-
+        // 1. 定义全局变量（默认兜底值）
+        private static double G_SIMILARITY = 0.82;
+        private static double G_TRUST = 0.25;
+        private static double G_COMP_EMBED = 0.45;
+        private static double G_COMP_RERANK = 0.80;
+        private static int G_MAX_RERANK = 5;
+        private static int G_FINAL_LIMIT = 3;
+        private static int G_RERANK_TIMEOUT = 5; // 精排超时时间 (秒)
         // 🌟 定义全局唯一的 Prompts 和 知识库内容
         private static String globalRewritePrompt;
         private static String globalAskPrompt;
@@ -32,7 +39,7 @@ import okhttp3.ConnectionPool;
         private static EmbeddingClient ACTIVE_EMBED = null;
         private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
 
-
+        public static String LUCENE_PATH = null; //
 	    private static final Map<String, ChatSession> sessions = new ConcurrentHashMap<>();
 	    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	   // private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -62,6 +69,18 @@ import okhttp3.ConnectionPool;
 	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
 	    public static void init(String type) {
             try {
+                System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
+
+                // 🌟 统一在这里读取文件，只读一次
+                globalRewritePrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
+                globalAskPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
+                globalRerankPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
+
+                // 🌟 加载全量知识库，避免 GBK 乱码
+                globalFullText = loadKnowledgeBase("c:\\knowledge.txt");
+                LUCENE_PATH = "E:\\AI\\lucene_index";
+                System.out.println("✅ [System Init] 全局资源加载完成。");
+
                 if (type == null) {
                     throw new IllegalArgumentException("模型类型不能为空！");
                 }
@@ -74,6 +93,12 @@ import okhttp3.ConnectionPool;
                             "text-embedding-3-small",
                             CLIENT
                     );
+                    // OpenAI 向量空间比较紧凑，可以严格一点
+                    G_SIMILARITY = 0.75;
+                    G_TRUST = 0.20;
+                    G_COMP_EMBED = 0.35;
+                    G_COMP_RERANK = 0.85;
+
                     // OpenAI 场景下三个角色暂时都用同一个客户端
                     ACTIVE_ROUTER = new ModelRouter(client, client, client);
                     ACTIVE_LLM = client;
@@ -104,6 +129,29 @@ import okhttp3.ConnectionPool;
 
                     String aliyunApiKey = System.getenv("QWEN_API_KEY");
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+
+                    // ==========================================
+                    // 🌟 Qwen 在线 API 专属阈值配置
+                    // ==========================================
+                    // 1. 最终拒答线：0.82
+                    // 解释：如果 qwen-turbo 给出的分数低于 0.18（距离 > 0.82），说明它极度不看好，拦截掉。
+                    G_SIMILARITY = 0.82;
+
+                    // 2. 信任快道：0.25
+                    // 解释：阿里的 text-embedding-v3 如果算出距离小于 0.25，说明这文本跟用户问题几乎一模一样（比如直接复制了文档里的原话），直接放行，省下调用 turbo 精排的 Token 钱和时间！
+                    G_TRUST = 0.25;
+
+                    // 3. 抢救资格线 (粗排)：0.45
+                    // 解释：只要向量距离在 0.45 以内，说明语义上是在聊同一件事，哪怕细节有互斥，也值得留给大模型做最后的“拒答判定”，不能轻易丢弃。
+                    G_COMP_EMBED = 0.45;
+
+                    // 4. 抢救触发线 (精排)：0.80
+                    // 解释：如果 turbo 精排因为“苹果手机”和“电脑”这种互斥逻辑直接打了 0.1 分（距离 0.90，大于 0.80），触发防误杀机制，强制拉回及格线！
+                    G_COMP_RERANK = 0.80;
+
+                    G_MAX_RERANK = 4;        // 减少并发 HTTP 请求，防止拥塞
+                    G_FINAL_LIMIT = 3;
+                    G_RERANK_TIMEOUT = 8;    // 在线 API 容易波动，多等一会
 
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
@@ -190,6 +238,20 @@ import okhttp3.ConnectionPool;
                     String aliyunApiKey = System.getenv("QWEN_API_KEY");
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
+
+// DJL本地精排 + 云端Qwen，这里定制专属的 4 个阈值
+                    G_SIMILARITY = 0.85;
+                    G_TRUST = 0.30;
+                    G_COMP_EMBED = 0.50;
+                    G_COMP_RERANK = 0.80;
+
+                    G_MAX_RERANK = 10;    // 本地不花钱，可以多看几个
+                    G_FINAL_LIMIT = 3;
+
+                    G_FINAL_LIMIT = 3;
+                    G_RERANK_TIMEOUT = 2;    // 本地超过 2s 肯定有问题，不等了
+
+                    DJLLocalClient djlLocalClient= new DJLLocalClient();
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
                             aliyunBaseUrl,
@@ -210,42 +272,33 @@ import okhttp3.ConnectionPool;
 
                     // ── 组装路由器 ────────────────────────────────────────────────
                     ACTIVE_ROUTER = new ModelRouter(
-                            turboClient,  // rewrite → 本地 Ollama
-                            turboClient,  // rerank  → 本地 Ollama
+                            turboClient,  // rewrite → turboClient
+                            djlLocalClient,  // rerank  → 本地
                             plusClient   // final   → 阿里云 qwen-plus
                     );
 
                     ACTIVE_LLM = plusClient;
-                    ACTIVE_EMBED = new DJLLocalClient();
+                    ACTIVE_EMBED = djlLocalClient;
                     ACTIVE_TABLE = "enterprise_knowledge_1024"; // 本地向量维度
 
                     System.out.println("✅ 混合模式已激活");
-                    System.out.println("   ├─ Rewrite:  turboClient");
-                    System.out.println("   ├─ Rerank:   turboClient");
+                    System.out.println("   ├─ Rewrite:  云端 Qwen-turboClient");
+                    System.out.println("   ├─ Rerank:   DJLLocalClient");
                     System.out.println("   ├─ Final:    云端 Qwen-Plus");
                     System.out.println("   └─ Embed:    本地 DJLLocalClient");
                     System.out.println("");
-                    System.out.println("💰 成本节省: ~40% (仅 final 调用云端)");
-                    System.out.println("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
+
 
                 } else {
                     throw new IllegalArgumentException("不支持的大模型类型: " + type);
                 }
 
-                System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
 
-                // 🌟 统一在这里读取文件，只读一次
-                globalRewritePrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
-                globalAskPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
-                globalRerankPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
-
-                // 🌟 加载全量知识库，避免 GBK 乱码
-                globalFullText = loadKnowledgeBase("c:\\knowledge.txt");
-
-                System.out.println("✅ [System Init] 全局资源加载完成。");
             } catch (Exception e) {
 
-                System.out.println("✅ [System Init] 全局资源加载error"+e);
+                System.err.println("❌ [System Init] 初始化失败！");
+                e.printStackTrace();
+                throw new RuntimeException("SessionManager 初始化失败", e);
             }
         }
         public static EmbeddingClient createQwenTurboClient() {
@@ -279,15 +332,22 @@ import okhttp3.ConnectionPool;
                 // 1. 创建基础能力会话
                 session = new ChatSession(ACTIVE_ROUTER, ACTIVE_EMBED, ACTIVE_TABLE);
 
+// ✅ 就是这里！4个核心距离参数在这里一键注入给 session
+                session.setThresholds(G_SIMILARITY, G_TRUST, G_COMP_EMBED, G_COMP_RERANK);
+                session.setTopK(G_MAX_RERANK, G_FINAL_LIMIT, G_RERANK_TIMEOUT);
+                // 💡 如果你把“召回数量”也提炼出来了，同样在这里一并注入：
+                // session.setTopK(10, 3);
+
                 // 2. 🌟 分开 set，注入 init 方法中加载好的全局资源
                 // 注意：这里必须使用静态变量 globalFullText 等（小写开头，与你类定义一致）
                 session.setFulltext(globalFullText);
                 session.setRewrite_prompt(globalRewritePrompt);
                 session.setAsk_prompt(globalAskPrompt);
-                session.setRerankSys_prompt(globalRerankPrompt);
 
+                session.setRerankSys_prompt(globalRerankPrompt);   // 保留 session 自己存一份（给 warmUp 或日志用）
+                session.getRouter().setRerankPrompt(globalRerankPrompt); // 绑定到路由层
                 //session.setUseRerank(false);
-				session.setQueryMode("fullText");//fullText //retrieveOnly //retrieveRerank
+				session.setQueryMode("retrieveRerank");//fullText //retrieveOnly //retrieveRerank
 
                 sessions.put(clientId, session);
                 System.out.println("🆕 为客户端 [" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
@@ -417,7 +477,8 @@ import okhttp3.ConnectionPool;
             try {
                 long start=System.currentTimeMillis();
                 ACTIVE_ROUTER.rewriter().generate("system", "hi");
-                ACTIVE_ROUTER.reranker().generate("system", "hi");
+                // 改后
+                ACTIVE_ROUTER.rerank("hi", "hi");
                 ACTIVE_ROUTER.finalLlm().generate("system", "hi");
 
                 ACTIVE_EMBED.embed("hello");
@@ -430,17 +491,7 @@ import okhttp3.ConnectionPool;
             }
         }
 
-        // ⭐ 新增：动态切换模型（可选）
-        public static void switchRewriteModel(LlmClient newRewriter) {
-            if (ACTIVE_ROUTER != null) {
-                ACTIVE_ROUTER = new ModelRouter(
-                        newRewriter,                  // 新的 rewrite 客户端
-                        ACTIVE_ROUTER.reranker(),     // 保留原有 rerank
-                        ACTIVE_ROUTER.finalLlm()      // 保留原有 final
-                );
-                System.out.println("✅ Rewrite 模型已切换");
-            }
-        }
+
         public static void switchRerankModel(LlmClient newReranker) {
             if (ACTIVE_ROUTER != null) {
                 ACTIVE_ROUTER = new ModelRouter(
@@ -451,52 +502,7 @@ import okhttp3.ConnectionPool;
                 System.out.println("✅ Rerank 模型已切换");
             }
         }
-    public static String rewriteQuery(String query, String history, String systemPrompt) throws Exception {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("model", "gpt-4o-mini");
-        ArrayNode messages = root.putArray("messages");
-        root.put("temperature", 0.0);
-        // ✅ 使用从文件加载的动态 Prompt
-        messages.addObject().put("role", "system").put("content", systemPrompt);
-        
-        //messages.addObject().put("role", "user").put("content", "历史内容:\n" + history + "\n最新提问: " + query);
-        messages.addObject()
-        .put("role", "user")
-        .put("content", "Conversation History:\n(" + history + ")\n\nCurrent Question: (" + query + ")");
-        
-        
-        String s=MAPPER.writeValueAsString(root);
-        System.out.println("rewriteQuery发送 s="+s);
-        RequestBody body = RequestBody.create(s, MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-                .url("https://api.openai.com/v1/chat/completions")
-                .header("Authorization", "Bearer " + API_KEY)
-                .post(body).build();
 
-        try (Response response = CLIENT.newCall(request).execute()) {
-            JsonNode resJson = MAPPER.readTree(response.body().string());
-            return resJson.path("choices").get(0).path("message").path("content").asText().trim();
-        }
-    }
-    public static double[] getEmbedding(String text) throws Exception {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("model", "text-embedding-3-small");
-        root.put("input", text);
-        RequestBody body = RequestBody.create(MAPPER.writeValueAsString(root), MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-            .url("https://api.openai.com/v1/embeddings")
-            .header("Authorization", "Bearer " + API_KEY)
-            .post(body).build();
-        try (Response response = CLIENT.newCall(request).execute()) {
-            JsonNode resJson = MAPPER.readTree(response.body().string());
-            JsonNode embeddingNode = resJson.path("data").get(0).path("embedding");
-            double[] vector = new double[embeddingNode.size()];
-            for (int i = 0; i < embeddingNode.size(); i++) {
-                vector[i] = embeddingNode.get(i).asDouble();
-            }
-            return vector;
-        }
-    }
 
         private static String loadPromptFromFile(String filePath, String defauts) {
             try {
