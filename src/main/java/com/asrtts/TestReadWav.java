@@ -1,13 +1,10 @@
-package com;
+package com.asrtts;
  
 
 	import java.io.*;
 	import java.nio.charset.StandardCharsets;
 
-	import java.io.*;
-	import java.nio.charset.StandardCharsets;
-
-	public class TestReadWav {
+public class TestReadWav {
 
 	    // ---------- 数据结构 ----------
 	    static class WavG711 {

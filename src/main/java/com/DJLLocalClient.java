@@ -1,6 +1,6 @@
 package com;
 
-
+import java.nio.file.Paths;
 
 import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
 import ai.djl.repository.zoo.Criteria;
@@ -13,19 +13,101 @@ public class DJLLocalClient implements EmbeddingClient,LlmClient {
     private ZooModel<String[], Float> rerankModel; // 专门用于 Cross-Encoder 的模型
     //private Predictor<String[], Float> rerankPredictor;
     // 统一配置路径
-    static String modeName="bge-reranker-v2-m3";
-   private static final String RERANK_MODEL_PATH = "E:/AI/"+modeName;
-    private static final String EMBED_MODEL_PATH = "E:/AI/text2vec-base-chinese-paraphrase-pt";
-    String localModelPath = "file:///E:/EIT/openai/text2vec-base-chinese-paraphrase";
+
+  // private static final String RERANK_MODEL_PATH = "E:/AI/"+modeName;
+   // private static final String EMBED_MODEL_PATH = "E:/AI/text2vec-base-chinese-paraphrase-pt";
+
+
+    // ==========================================
+    // Variables loaded dynamically from AiConfig
+    // ==========================================
+    private static String modeName;       // Rerank 模型文件夹名称
+    private static String embedName;      // Embedding 模型文件夹名称
+
+    // 拼装后的完整绝对路径 (保留这两个变量，供下面的构造函数和 initRerankModel 使用)
+    private static String rerankModelPath;
+    private static String embedModelPath;
+
+    private static String nativePath;
+    private static int embedDimension;
+    private static double rerankTemperature;
+
+
+
+        // 🌟 MUST be wrapped in a static block to initialize paths properly
+        static {
+            // 1. 自动初始化检查：如果 configPath 为空，根据 OS 自动兜底初始化
+            if (AiConfig.configPath == null) {
+                System.out.println("⚠️ 检测到 AiConfig 尚未初始化，执行本地测试模式兜底初始化...");
+                String os = System.getProperty("os.name").toLowerCase();
+                // 🌟 确保默认路径是干净的
+                String defaultPath = os.contains("win") ? "E:\\AI" : "/home/call/ai";
+                AiConfig.init(defaultPath);
+            }
+
+            // 2. 统一使用正斜杠处理根路径，确保 Linux 兼容性
+            // 确保 basePath 不以斜杠结尾，方便后续统一拼接
+            String basePath = AiConfig.configPath.replace("\\", "/");
+            if (basePath.endsWith("/")) {
+                basePath = basePath.substring(0, basePath.length() - 1);
+            }
+            // 3. 从配置文件仅读取模型文件夹名称 (配置中不再带 E:/AI 等前缀)
+            modeName = AiConfig.getStringConfig("djl.model.rerank.name", "bge-reranker-v2-m3");
+            embedName = AiConfig.getStringConfig("djl.model.embed.name", "text2vec-base-chinese-paraphrase-pt");
+
+            // 4. 动态拼装完整绝对路径
+            rerankModelPath = basePath + "/" + modeName;
+            embedModelPath  = basePath + "/" + embedName;
+
+            // 🌟 关键修改：Native 库路径也应基于 basePath 拼接，而不是写死 Windows 格式
+          //  nativePath = basePath + "/pytorch-native-cpu-2.2.2-win-x86_64/pytorch/cpu/win-x86_64";
+            String os = System.getProperty("os.name").toLowerCase();
+            String nativeDir = os.contains("win") ?
+                    "/pytorch-native-cpu-2.1.2-win-x86_64/pytorch/cpu/win-x86_64" :
+                    "/pytorch-native-cpu-2.1.2-linux-x86_64/pytorch/cpu/linux-x86_64";
+
+
+
+            nativePath = basePath + nativeDir;
+
+            // 5. 读取其他常规配置
+            embedDimension = AiConfig.getIntConfig("djl.model.embed.dimension", 768);
+            rerankTemperature = AiConfig.getDoubleConfig("djl.rerank.temperature", 0.5);
+
+            // 6. 环境注入
+            System.setProperty("PYTORCH_LIBRARY_PATH", nativePath);
+            System.setProperty("java.library.path", nativePath);
+
+            //fist run ,need to download //comment heree
+             System.setProperty("DJL_OFFLINE", "true");
+            System.setProperty("offline", "true");
+
+            System.out.println("✅ 已通过 AiConfig.configPath (" + basePath + ") 自动拼装所有本地模型路径！");
+        }
+
 // 1. 指定原生 PyTorch 核心库路径
 // 🌟 必须包裹在 static 块中，否则报 <identifier> expected 错误
+    /*
 static {
-    System.setProperty("PYTORCH_LIBRARY_PATH", "E:/AI/libtorch_win");
-    System.setProperty("java.library.path", "E:/AI/libtorch_win");
-    System.setProperty("offline", "true");
+
+
+
+        String nativePath = "E:/AI/pytorch-native-cpu-2.1.2-win-x86_64/pytorch/cpu/win-x86_64";
+
+        // 1. 指定 DJL 寻找 PyTorch 核心库的路径
+        System.setProperty("PYTORCH_LIBRARY_PATH", nativePath);
+
+        // 2. 指定 JVM 加载 JNI 库（如 djl_torch.dll）的路径
+        System.setProperty("java.library.path", nativePath);
+        System.setProperty("DJL_OFFLINE", "true");
+
+        System.setProperty("offline", "true");
+
     System.out.println("✅ 已锁定本地路径并开启离线模式");
-}
+} */
+
     public DJLLocalClient() throws Exception {
+
         if (model == null) {
             /*
             检测 (Detection)：它发现你需要 PyTorch 引擎，但本地或远程只有 .bin。
@@ -44,15 +126,19 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
 
             */
             // 正确写法：
-            String path = "E:/EIT/openai/text2vec-base-chinese-pt";
-            path=EMBED_MODEL_PATH;
+           // String path = "E:/EIT/openai/text2vec-base-chinese-pt";
+          //  path=EMBED_MODEL_PATH;
            // path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embedding/ai/djl/huggingface/pytorch/shibing624/text2vec-base-chinese/0.0.1/text2vec-base-chinese";
            // path = "E:/EIT/openai/text2vec-base-chinese-pt";
            // System.out.println("当前加载目录: " + Paths.get("E:\\EIT\\openai\\text2vec-base-chinese-pt").toAbsolutePath());
+
+            // 🌟 核心修复：使用 Paths.get 自动处理 URI，不要手动拼 "file:/"
+            String embedUri = Paths.get(embedModelPath).toUri().toString();
+
             Criteria<String, float[]> criteria = Criteria.builder()
                     .setTypes(String.class, float[].class)
                     // 注意：必须确保路径前面有 file:/
-                    .optModelUrls("file:/" + path)
+                    .optModelUrls(embedUri) // 👈 Paths 转换后会自动带上正确的协议头
                     .optEngine("PyTorch")
                     // 🌟 核心修复 1: 显式告诉 DJL 权重文件叫 pytorch_model
                     // 注意：不要加 .bin 或 .pt 后缀，DJL 会自动根据引擎寻找
@@ -65,7 +151,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             model = criteria.loadModel();
 
 
-            initRerankModel(RERANK_MODEL_PATH);
+            initRerankModel(rerankModelPath);
         }
         // 🌟 2. 执行预热 (Warmup)
        // warmup(3); // 生产环境建议连续预热 3-5 次
@@ -74,11 +160,11 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
 
             // 🌟 修复 1：去掉 models/，对齐你 Python 脚本生成的绝对真实路径
           //  String modelPath = "E:/EIT/openai/bge-reranker-large";
-
+        String rerankUri = Paths.get(modelPath1).toUri().toString();
             Criteria<String[], Float> criteria = Criteria.builder()
                     .setTypes(String[].class, Float.class)
                     // 🌟 修复 2：Windows 本地路径必须用 file:/// (三个斜杠)
-                    .optModelUrls("file:///" + modelPath1)
+                    .optModelUrls(rerankUri)
                     .optEngine("PyTorch")
                     // 🌟 修复 3：明确告诉它，你要找的文件名叫 bge-reranker-base (.pt)
                     .optOption("modelName", modeName)
@@ -119,8 +205,8 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
         // systemPrompt 对 Cross-Encoder 无意义，直接忽略
         try (var predictor = rerankModel.newPredictor()) {
             float rawLogit = predictor.predict(new String[]{query, document});
-            double temperature = 0.5;
-            return 1.0 / (1.0 + Math.exp(-rawLogit / temperature));
+           // double temperature = 0.5;
+            return 1.0 / (1.0 + Math.exp(-rawLogit / rerankTemperature));
         }
     }
     public double rerank(String query, String document) throws Exception {
@@ -167,7 +253,15 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
 
     public static void main(String[] args) {
         try {
-            System.out.println("⏳ 正在初始化本地 DJL Rerank 引擎..."+RERANK_MODEL_PATH);
+// 🌟 核心：抢在任何类加载前，先把路径定死
+            if (args.length > 0) {
+                // 如果命令行传了路径（比如 /home/call/ai），手动塞给 AiConfig
+                AiConfig.configPath = args[0].replace("\\", "/");
+                System.out.println("⏳ 正在初始化本地 configPath="+AiConfig.configPath);
+                AiConfig.init(args[0]);
+            }
+
+            System.out.println("⏳ 正在初始化本地 DJL Rerank 引擎..."+rerankModelPath);
             long initStart = System.currentTimeMillis();
             DJLLocalClient client = new DJLLocalClient();
             System.out.println("✅ 初始化完成！总耗时: " + (System.currentTimeMillis() - initStart) + " ms\n");
@@ -175,9 +269,54 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             // 预热 (消除冷启动差异)
             System.out.println("🔥 正在进行预热...");
             for (int i = 0; i < 3; i++) {
-                client.generate("预热", "预热");
+                client.rerank("预热", "预热");
             }
             System.out.println("✅ 预热完成！\n");
+
+
+
+            // ==========================================
+// 🚨 终极证明：为什么 Rerank 是不可或缺的？
+// ==========================================
+            System.out.println("==================================================");
+            System.out.println("🚨 终极证明：Embedding 的“盲点”与 Rerank 的“降维打击”");
+            System.out.println("测试原理：构造一个【字面高度重合但主体错误】的陷阱，和一个【字面毫无重合但语义正确】的答案。");
+
+// 用户真实口语化提问
+            String ultimateQuery = "我是学生，密码忘了怎么找回？";
+
+// ❌ 陷阱文档：几乎包含了问题里的所有关键字，连句式都一样，但适用对象是“教师”。
+// (Embedding 会被这些高度重合的词汇欺骗，认为它极度相关)
+            String trapDoc = "【适用对象：教师】密码忘了怎么找回？请在登录页点击找回。";
+            trapDoc="本文档仅适用于教师，不适用于学生。教师密码忘了怎么找回？";
+// ✅ 正确文档：完全没有“密码”、“忘了”、“找回”这些词，全被替换成了同义词，但主体是“学生”。
+// (Embedding 找不到相似关键字，会给极差的分数；但 Rerank 能读懂它)
+            String correctDoc = "【适用对象：学生】若遇到口令遗失无法登录的情况，请联系您的班主任处理。";
+
+            System.out.printf("\n【用户问题】: %s\n", ultimateQuery);
+            System.out.println("--------------------------------------------------");
+
+// 1. 测试 Embedding (盲婚哑嫁模式)
+            double[] vQuery = client.embed(ultimateQuery);
+            double[] vTrap = client.embed(trapDoc);
+            double[] vCorrect = client.embed(correctDoc);
+
+            System.out.println("🧪 第一回合：单纯依靠 Embedding 向量检索 (看距离，越小越好)");
+            printDistance("陷阱文档 (字面重合，主体错)", ultimateQuery, trapDoc, vQuery, vTrap);
+            printDistance("正确文档 (字面不同，主体对)", ultimateQuery, correctDoc, vQuery, vCorrect);
+// 预期结果：陷阱文档的距离会远小于正确文档。如果没 Rerank，正确的文档直接被淘汰！
+
+// 2. 测试 Rerank (面对面相亲模式)
+            System.out.println("🎯 第二回合：Rerank 交叉精排打分 (看概率，越大越好，1.0为满分)");
+            double scoreTrap = client.rerank(ultimateQuery, trapDoc);
+            double scoreCorrect = client.rerank(ultimateQuery, correctDoc);
+
+            System.out.printf("  👉 [陷阱文档] Rerank 最终打分: %.4f (无情识破陷阱！)\n", scoreTrap);
+            System.out.printf("  👉 [正确文档] Rerank 最终打分: %.4f (成功捞回正确答案！)\n", scoreCorrect);
+            System.out.println("==================================================\n");
+
+
+
 
             // ==========================================
             // 🚨 场景一：角色错位 (最经典的陷阱)
@@ -251,7 +390,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
     private static void printTimedRank(DJLLocalClient client, String label, String query, String doc) {
         try {
             long start = System.currentTimeMillis();
-            String score = client.generate(query, doc);
+            double score = client.rerank(query, doc);
             long time = System.currentTimeMillis() - start;
 
             // %-14s 让标签左对齐，方便视觉对比；%3d 保证耗时位对齐

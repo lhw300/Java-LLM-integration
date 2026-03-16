@@ -6,6 +6,20 @@
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
 
+
+            System.out.println("🔥 进程内验证 QWEN_API_KEY: [" + System.getenv("QWEN_API_KEY") + "]");
+            // 1. 设置默认路径
+            String configPath = "e:\\ai";
+
+
+            // 2. 检查命令行是否传入了参数
+            if (args.length > 0) {
+                configPath = args[0];
+                System.out.println("📂 检测到命令行参数，使用配置路径: " + configPath);
+            } else {
+                System.out.println("ℹ️ 未检测到命令行参数，使用默认路径: " + configPath);
+            }
+            SessionManager.init(  configPath);
             /* RAG 测试用例开始*/
             /* *************************************************************************
              * RAG 多轮对话引擎 - 核心测试套件 (Scenario-Based Test Suite)
@@ -68,13 +82,12 @@
             /* *************************************************************************
              * RAG 测试用例结束
              * ************************************************************************* */
-	        
-	        
 
-	        
+
+
 
 	      //  SessionManager.init("qwen-online");
-           SessionManager.init("hybrid2");
+          // SessionManager.init("e:\\ai");
 	    // 这一步会同时打通对话接口和向量接口的网络链路
 	       SessionManager.warmUp();
 

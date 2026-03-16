@@ -1,12 +1,10 @@
-package com;
+package com.asrtts;
 
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.audio.AudioModel;
 import com.openai.models.audio.transcriptions.Transcription;
 import com.openai.models.audio.transcriptions.TranscriptionCreateParams;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 

@@ -2,7 +2,7 @@
 	package com;
 
 	
-	public class ChatExample {
+	public class ChatVisaExample {
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
 
@@ -79,7 +79,7 @@
 
 	        
 
-	       SessionManager.init("qwen-online");
+	       SessionManager.init("qwen-online","e:\\ai");
 	    // 这一步会同时打通对话接口和向量接口的网络链路
 	       SessionManager.warmUp();
 

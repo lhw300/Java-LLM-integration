@@ -10,12 +10,13 @@ import java.nio.file.Paths;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-
+import java.nio.file.Path;
+import java.nio.file.Paths;
 public class SearchService {
     private static HikariDataSource dataSource;
     private static SearcherManager luceneSearcherManager;
    // private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
-
+    static String storage_type;
     // 标志位，确保初始化只执行一次
     private static boolean isInitialized = false;
     public static class KnowledgeItem {
@@ -35,15 +36,27 @@ public class SearchService {
      * 🌟 根据模式进行按需初始化
      * 在 getRelevantKnowledge 调用时自动触发
      */
-    private static synchronized void init(String aiType) {
+    public static synchronized void init(String aiType) {
         if (isInitialized) return;
-
-        if ("local".equalsIgnoreCase(aiType)) {
+// 获取基础路径 (假设外部已调用过 AiConfig.init)
+        String baseDir = AiConfig.configPath;
+        storage_type=aiType;
+        if ("lucene".equalsIgnoreCase(storage_type)) {
             // 1. 初始化 Lucene 资源
             try {
                 if (luceneSearcherManager == null) {
-                    FSDirectory dir = FSDirectory.open(Paths.get(SessionManager.LUCENE_PATH));
-                    luceneSearcherManager = new SearcherManager(dir, new SearcherFactory());
+                    String luceneConfigPath = AiConfig.getStringConfig("path.lucene", "/lucene_index");
+                    // 2. 跨平台安全拼接
+                    Path path = Paths.get(luceneConfigPath);
+                    if (!path.isAbsolute() && baseDir != null) {
+                        path = Paths.get(baseDir, luceneConfigPath);
+                    }
+
+                    FSDirectory dir = FSDirectory.open(path);
+
+
+                    luceneSearcherManager   = new SearcherManager(dir, new SearcherFactory());
+                    System.out.println("✅ Lucene 搜索器初始化成功，路径: " + path.toAbsolutePath());
                     System.out.println("✅ 已按需初始化 Lucene SearcherManager");
                 }
             } catch (Exception e) {
@@ -53,11 +66,19 @@ public class SearchService {
             // 2. 初始化 Postgres 连接池
             if (dataSource == null) {
                 HikariConfig config = new HikariConfig();
+                /*
                 config.setJdbcUrl("jdbc:postgresql://localhost:5432/postgres");
                 config.setUsername("postgres");
                 config.setPassword("call");
                 config.setMaximumPoolSize(10);
-                config.setKeepaliveTime(60000);
+                config.setKeepaliveTime(60000); */
+                // ✅ 修改后的写法：
+                config.setJdbcUrl(AiConfig.getStringConfig("db.postgres.url", "jdbc:postgresql://localhost:5432/postgres"));
+                config.setUsername(AiConfig.getStringConfig("db.postgres.user", "postgres"));
+                config.setPassword(AiConfig.getStringConfig("db.postgres.password", "call"));
+                config.setMaximumPoolSize(AiConfig.getIntConfig("db.postgres.pool.max", 10));
+                config.setKeepaliveTime(AiConfig.getIntConfig("db.postgres.pool.keepalive", 60000));
+
                 dataSource = new HikariDataSource(config);
                 System.out.println("✅ 已按需初始化 Postgres 连接池");
             }
@@ -68,31 +89,32 @@ public class SearchService {
     public static List<KnowledgeItem> getRelevantKnowledge( String tableName, String query, EmbeddingClient embedClient) throws Exception {
 
         // 🌟 直接从接口方法获取模式，不再使用 instanceof
-        String mode = embedClient.modeType();
+        //String mode = embedClient.modeType();
         // 自动执行按需初始化
-        init(mode);
+        init(storage_type);
 
         // --- Step 1: 向量化 ---
         long startEmbed = System.currentTimeMillis();
         double[] vector = embedClient.embed(query);
-        System.out.println("Step 1: [" + mode + "] Embedding took: " + (System.currentTimeMillis() - startEmbed) + " ms");
+        System.out.println("Step 1: [" + storage_type + "] Embedding took: " + (System.currentTimeMillis() - startEmbed) + " ms");
 
         // --- Step 2: 分支检索 ---
         List<KnowledgeItem> results;
         long startSearch = System.currentTimeMillis();
 
-        if ("local".equalsIgnoreCase(mode)) {
+        if ("lucene".equalsIgnoreCase(storage_type)) {
             results = searchLucene(vector, 15);
         } else {
             results = searchTopKnowledge(tableName, vector, 15);
         }
 
-        System.out.println("Step 2: [" + mode + "] Search took: " + (System.currentTimeMillis() - startSearch) + " ms");
+        System.out.println("Step 2: [" + storage_type + "] Search took: " + (System.currentTimeMillis() - startSearch) + " ms");
         return results;
     }
     /**
      * 适配 Lucene 的 KNN 向量检索方法
      */
+    /*
     private static List<KnowledgeItem> searchLucene(double[] vector, int limit) throws Exception {
         List<KnowledgeItem> results = new ArrayList<>();
 
@@ -129,6 +151,34 @@ public class SearchService {
                         unifiedDistance
                 ));
             }
+        }
+        return results;
+    } */
+    /**
+     * 优化后的 Lucene 检索逻辑
+     */
+    private static List<KnowledgeItem> searchLucene(double[] vector, int limit) throws Exception {
+        List<KnowledgeItem> results = new ArrayList<>();
+
+        // 从管理器获取 searcher，这是线程安全的推荐做法
+        IndexSearcher searcher = luceneSearcherManager.acquire();
+        try {
+            float[] fVec = new float[vector.length];
+            for (int i = 0; i < vector.length; i++) fVec[i] = (float) vector[i];
+
+            KnnVectorQuery query = new KnnVectorQuery("embedding", fVec, limit);
+            TopDocs topDocs = searcher.search(query, limit);
+
+            for (ScoreDoc sd : topDocs.scoreDocs) {
+                Document doc = searcher.doc(sd.doc);
+                // 统一距离计算公式: D = 2 * (1 - Score)
+                double unifiedDistance = Math.round(2.0 * (1.0 - sd.score) * 100.0) / 100.0;
+                results.add(new KnowledgeItem(
+                        doc.get("category"), doc.get("summary"), doc.get("content"), unifiedDistance));
+            }
+        } finally {
+            // 必须释放
+            luceneSearcherManager.release(searcher);
         }
         return results;
     }
@@ -203,11 +253,11 @@ public class SearchService {
             // 注意：这里使用你之前定义的 SessionManager 或直接 new QwenClient()
             EmbeddingClient client = SessionManager.createQwenTurboClient();
 
-            String mode = client.modeType();
-            System.out.println("检测到模式: " + mode);
+         //   String mode = client.modeType();
+            System.out.println("检测到模式: " + AiConfig.getStringConfig("storage.type","local"));
 
             // 🌟 2. 自动执行 Postgres 连接池初始化
-            init(mode);
+            init(AiConfig.getStringConfig("storage.type","local"));
 
             // Warmup (在线模式主要是为了激活动态连接池)
             System.out.println("正在进行网络预热...");
@@ -283,11 +333,17 @@ public class SearchService {
         System.out.println("=== 🚀 本地 RAG 性能压力测试启动 (i5-1340P) ===");
 
         try {
+            // 1. 初始化环境：支持命令行传入路径，支持 Windows/Linux 跨平台
+            String baseDir = (args.length > 0) ? args[0] : "e:\\ai";
+            AiConfig.init(baseDir);
+
+            System.out.println("=== 🔍 SearchService 独立压力测试 ===");
+
             // 初始化本地客户端（触发静态块锁定 DLL 和加载模型）
             EmbeddingClient client = new DJLLocalClient();
-            String mode = client.modeType();
+           // String mode = client.modeType();
             // 自动执行按需初始化
-            init(mode);
+            init(AiConfig.getStringConfig("storage.type","lucene"));
 
             client.embed("hello");
             client.embed("hello");
@@ -347,9 +403,10 @@ public class SearchService {
         }
     }
     public static void main_single_test(String[] args) {
-        String aiType = "local"; // 切换为 "qwen-online" 测试数据库模式
+        String aiType = "lucene"; // 切换为 "qwen-online" 测试数据库模式
         aiType="online";
-            String tableName = "enterprise_knowledge_qwen_1024";
+          //  String tableName = "enterprise_knowledge_qwen_1024";
+        String tableName = AiConfig.getStringConfig("db.postgres.table.online", "enterprise_knowledge_qwen_1024");
         String query = "学生账号初始密码是什么？";
 
         System.out.println("=== 🔍 知识库检索测试启动 ===");
@@ -359,7 +416,7 @@ public class SearchService {
         EmbeddingClient client = null;
         try {
             // 1. 初始化对应的 Embedding 客户端
-            if ("local".equalsIgnoreCase(aiType)) {
+            if ("lucene".equalsIgnoreCase(aiType)) {
                 // 确保 E:/EIT/openai/libtorch 下有配套的 DLL
                 client = new DJLLocalClient();
                 String mode = client.modeType();

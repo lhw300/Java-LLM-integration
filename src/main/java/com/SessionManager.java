@@ -19,7 +19,10 @@ import okhttp3.ConnectionPool;
 	import okhttp3.Response;
 
 	public class SessionManager {
+        public static  String configPath="d:\\ai";
+        private static String G_QUERY_MODE = "retrieveRerank";
 
+        private static String GLOBAL_QWEN_KEY = null; // 🌟 必须定义为全局静态变量
         // 1. 定义全局变量（默认兜底值）
         private static double G_SIMILARITY = 0.82;
         private static double G_TRUST = 0.25;
@@ -28,6 +31,12 @@ import okhttp3.ConnectionPool;
         private static int G_MAX_RERANK = 5;
         private static int G_FINAL_LIMIT = 3;
         private static int G_RERANK_TIMEOUT = 5; // 精排超时时间 (秒)
+
+
+        // 🌟 新增：高级配置参数
+        private static double G_RERANK_TRIGGER_MAX = 0.60;
+        private static double G_RESCUE_SCORE = 0.60;
+
         // 🌟 定义全局唯一的 Prompts 和 知识库内容
         private static String globalRewritePrompt;
         private static String globalAskPrompt;
@@ -39,7 +48,7 @@ import okhttp3.ConnectionPool;
         private static EmbeddingClient ACTIVE_EMBED = null;
         private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
 
-        public static String LUCENE_PATH = null; //
+      //  public static String LUCENE_PATH = null; //
 	    private static final Map<String, ChatSession> sessions = new ConcurrentHashMap<>();
 	    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	   // private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -65,25 +74,77 @@ import okhttp3.ConnectionPool;
 	 // 实例化一个具体的模型客户端 (比如上线用 OpenAI，本地测试换成 OllamaClient)
  
 	 // 分别声明两个接口能力
+     public static void init(String configPath) {
+         // 先用路径初始化配置工具
+         AiConfig.init(configPath);
 
+         // 🌟 关键：从刚刚加载的配置中读取 type，如果没有则默认为 hybrid2
+         String configType = AiConfig.getStringConfig("system.run.type", "hybrid2");
+
+         // 调用核心初始化逻辑
+         init(configType, configPath);
+     }
 	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
-	    public static void init(String type) {
+	    public static void init(String type,String configPath) {
             try {
                 System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
+                SessionManager.configPath=configPath;
+                AiConfig.init(configPath); // 初始化配置工具
 
-                // 🌟 统一在这里读取文件，只读一次
-                globalRewritePrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rewritequery_v1_publish.txt", "");
-                globalAskPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_finalask_v1_publish.txt", "");
-                globalRerankPrompt = loadPromptFromFile("e:\\eit\\openai\\prompt_rerank_v1_publish.txt", "");
+// 🌟 1. 统一处理根路径格式：将反斜杠替换为正斜杠，确保 Linux 兼容性
+                String base = configPath.replace("\\", "/");
 
-                // 🌟 加载全量知识库，避免 GBK 乱码
-                globalFullText = loadKnowledgeBase("c:\\knowledge.txt");
-                LUCENE_PATH = "E:\\AI\\lucene_index";
-                System.out.println("✅ [System Init] 全局资源加载完成。");
+                // 🌟 2. 动态拼接：根路径 + 配置文件中的子路径
+                String promptRewritePath = base + AiConfig.getStringConfig("path.prompt.rewrite", "/config/prompt_rewritequery_v1_publish.txt");
+                String promptAskPath     = base + AiConfig.getStringConfig("path.prompt.ask", "/config/prompt_finalask_v1_publish.txt");
+                String promptRerankPath  = base + AiConfig.getStringConfig("path.prompt.rerank", "/config/prompt_rerank_v1_publish.txt");
+                String knowledgePath     = base + AiConfig.getStringConfig("path.knowledge", "/config/knowledge_full.txt");
+
+                // Lucene 路径同样动态拼接
+               // LUCENE_PATH = base + AiConfig.getStringConfig("path.lucene", "/lucene_index");
+
+
+                G_QUERY_MODE = AiConfig.getStringConfig("rag.query.mode", "retrieveRerank");
+
+              //  LUCENE_PATH = "E:\\AI\\lucene_index";
+
+                // 🌟 4. 加载 Prompt 和知识库内容
+                globalRewritePrompt = loadPromptFromFile(promptRewritePath, "");
+                globalAskPrompt     = loadPromptFromFile(promptAskPath, "");
+                globalRerankPrompt  = loadPromptFromFile(promptRerankPath, "");
+                globalFullText      = loadKnowledgeBase(knowledgePath);
+
+                // 🌟 2. 从配置表加载 RAG 阈值参数 (后方数值为文件未找到时的默认兜底值)
+                /*
+                G_SIMILARITY     = AiConfig.getDoubleConfig("rag.threshold.similarity", 0.82);
+                G_TRUST          = AiConfig.getDoubleConfig("rag.threshold.trust", 0.25);
+                G_COMP_EMBED     = AiConfig.getDoubleConfig("rag.threshold.comp_embed", 0.45);
+                G_COMP_RERANK    = AiConfig.getDoubleConfig("rag.threshold.comp_rerank", 0.80);
+                G_MAX_RERANK     = AiConfig.getIntConfig("rag.limit.max_rerank", 5);
+                G_FINAL_LIMIT    = AiConfig.getIntConfig("rag.limit.final_limit", 3);
+                G_RERANK_TIMEOUT = AiConfig.getIntConfig("rag.timeout.rerank", 5);
+                */
+
+                GLOBAL_QWEN_KEY = AiConfig.getStringConfig("api.key.qwen", System.getenv("QWEN_API_KEY"));
+
+                // 打印调试（生产环境可关闭）
+                System.out.println("DEBUG: 读取到的 QWEN_API_KEY 长度 = " +
+                        (GLOBAL_QWEN_KEY != null ? GLOBAL_QWEN_KEY.length() : "null"));
+
+               // String aliyunApiKey = AiConfig.getStringConfig("api.key.qwen", System.getenv("QWEN_API_KEY"));
+              //  String openAiApiKey = AiConfig.getStringConfig("api.key.openai", System.getenv("OPENAI_API_KEY"));
+
+
+                SearchService.init(AiConfig.getStringConfig("storage.type","local"));
+                System.out.println("✅ [System Init] 全局资源加载完成。type="+type);
 
                 if (type == null) {
                     throw new IllegalArgumentException("模型类型不能为空！");
                 }
+
+
+
+
 
                 if (type.equalsIgnoreCase("openai")) {
                     System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
@@ -94,10 +155,18 @@ import okhttp3.ConnectionPool;
                             CLIENT
                     );
                     // OpenAI 向量空间比较紧凑，可以严格一点
-                    G_SIMILARITY = 0.75;
-                    G_TRUST = 0.20;
-                    G_COMP_EMBED = 0.35;
-                    G_COMP_RERANK = 0.85;
+
+
+                    G_SIMILARITY     = AiConfig.getDoubleConfig("rag.threshold.similarity", 0.75);
+                    G_TRUST          = AiConfig.getDoubleConfig("rag.threshold.trust", 0.20);
+                    G_COMP_EMBED     = AiConfig.getDoubleConfig("rag.threshold.comp_embed", 0.35);
+                    G_COMP_RERANK    = AiConfig.getDoubleConfig("rag.threshold.comp_rerank", 0.85);
+                    G_MAX_RERANK     = AiConfig.getIntConfig("rag.limit.max_rerank", 5);
+                    G_FINAL_LIMIT    = AiConfig.getIntConfig("rag.limit.final_limit", 3);
+                    G_RERANK_TIMEOUT = AiConfig.getIntConfig("rag.timeout.rerank", 5);
+// 🌟 新增：读取高级阈值
+                    G_RERANK_TRIGGER_MAX = AiConfig.getDoubleConfig("rag.threshold.rerank_trigger_max", 0.60);
+                    G_RESCUE_SCORE       = AiConfig.getDoubleConfig("rag.threshold.rescue_score", 0.60);
 
                     // OpenAI 场景下三个角色暂时都用同一个客户端
                     ACTIVE_ROUTER = new ModelRouter(client, client, client);
@@ -127,7 +196,8 @@ import okhttp3.ConnectionPool;
                 } else if (type.equalsIgnoreCase("qwen-online")) {
                     System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
 
-                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+
+
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
                     // ==========================================
@@ -135,23 +205,30 @@ import okhttp3.ConnectionPool;
                     // ==========================================
                     // 1. 最终拒答线：0.82
                     // 解释：如果 qwen-turbo 给出的分数低于 0.18（距离 > 0.82），说明它极度不看好，拦截掉。
-                    G_SIMILARITY = 0.82;
-
+                 // G_SIMILARITY = 0.82;
                     // 2. 信任快道：0.25
                     // 解释：阿里的 text-embedding-v3 如果算出距离小于 0.25，说明这文本跟用户问题几乎一模一样（比如直接复制了文档里的原话），直接放行，省下调用 turbo 精排的 Token 钱和时间！
-                    G_TRUST = 0.25;
-
+                 // G_TRUST = 0.25;
                     // 3. 抢救资格线 (粗排)：0.45
                     // 解释：只要向量距离在 0.45 以内，说明语义上是在聊同一件事，哪怕细节有互斥，也值得留给大模型做最后的“拒答判定”，不能轻易丢弃。
-                    G_COMP_EMBED = 0.45;
-
+                  //G_COMP_EMBED = 0.45;
                     // 4. 抢救触发线 (精排)：0.80
                     // 解释：如果 turbo 精排因为“苹果手机”和“电脑”这种互斥逻辑直接打了 0.1 分（距离 0.90，大于 0.80），触发防误杀机制，强制拉回及格线！
-                    G_COMP_RERANK = 0.80;
+                 // G_COMP_RERANK = 0.80;
+                  //G_MAX_RERANK = 4;        // 减少并发 HTTP 请求，防止拥塞
+                //  G_FINAL_LIMIT = 3;
+                  //G_RERANK_TIMEOUT = 8;    // 在线 API 容易波动，多等一会
 
-                    G_MAX_RERANK = 4;        // 减少并发 HTTP 请求，防止拥塞
-                    G_FINAL_LIMIT = 3;
-                    G_RERANK_TIMEOUT = 8;    // 在线 API 容易波动，多等一会
+                    G_SIMILARITY     = AiConfig.getDoubleConfig("rag.threshold.similarity", 0.82);
+                    G_TRUST          = AiConfig.getDoubleConfig("rag.threshold.trust", 0.25);
+                    G_COMP_EMBED     = AiConfig.getDoubleConfig("rag.threshold.comp_embed", 0.45);
+                    G_COMP_RERANK    = AiConfig.getDoubleConfig("rag.threshold.comp_rerank", 0.80);
+                    G_MAX_RERANK     = AiConfig.getIntConfig("rag.limit.max_rerank", 4);
+                    G_FINAL_LIMIT    = AiConfig.getIntConfig("rag.limit.final_limit", 3);
+                    G_RERANK_TIMEOUT = AiConfig.getIntConfig("rag.timeout.rerank", 8);
+// 🌟 新增：读取高级阈值
+                    G_RERANK_TRIGGER_MAX = AiConfig.getDoubleConfig("rag.threshold.rerank_trigger_max", 0.60);
+                    G_RESCUE_SCORE       = AiConfig.getDoubleConfig("rag.threshold.rescue_score", 0.60);
 
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
@@ -159,7 +236,7 @@ import okhttp3.ConnectionPool;
                             "qwen-turbo",          // 快速、低成本
                             "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
                             CLIENT,
-                            aliyunApiKey
+                            GLOBAL_QWEN_KEY
                     );
 
                     // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
@@ -168,7 +245,7 @@ import okhttp3.ConnectionPool;
                             "qwen-plus",           // 高质量回答
                             "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
                             CLIENT,
-                            aliyunApiKey
+                            GLOBAL_QWEN_KEY
                     );
 
                     // ── 组装路由器 ────────────────────────────────────────────────────
@@ -189,7 +266,7 @@ import okhttp3.ConnectionPool;
                     System.out.println("🔄 正在初始化混合模式...");
                     System.out.println("   架构: 本地 Ollama (rewrite/rerank) + 云端 Qwen-Plus (final)");
 
-                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
                     // ── 本地 Ollama 客户端（负责 rewrite + rerank）────────────────
@@ -207,7 +284,7 @@ import okhttp3.ConnectionPool;
                             "qwen-plus",                      // 高质量模型
                             "text-embedding-v3",              // 占位，实际用本地 embed
                             CLIENT,
-                            aliyunApiKey
+                            GLOBAL_QWEN_KEY
                     );
 
                     // ── 组装路由器 ────────────────────────────────────────────────
@@ -233,23 +310,53 @@ import okhttp3.ConnectionPool;
                 } else if (type.equalsIgnoreCase("hybrid2")) {
                     // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
                     System.out.println("🔄 正在初始化混合模式...");
-                    System.out.println("   架构: 本地 qwenonline (rewrite/rerank) + 云端 Qwen-Plus (final)");
+                   // System.out.println("   架构: 本地 qwenonline (rewrite/rerank) + 云端 Qwen-Plus (final)");
 
-                    String aliyunApiKey = System.getenv("QWEN_API_KEY");
+
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
+// ==========================================
+// 🎛️ Hybrid RAG Routing & Threshold Config
+// 注：内部计算统一转换为距离 (Distance = 1.0 - Score)，值越小越相关
+// Note: Internal logic uses distance (1.0 - score), smaller is more relevant.
+// ==========================================
 
+// 最终拒答防线：若精排后的最优距离 > 0.85，直接拦截并回复“未找到”，防止大模型产生幻觉。
+// Final Cutoff: If the best distance > 0.85 after reranking, reject and reply "not found" to prevent LLM hallucination.
+                //  G_SIMILARITY = 0.85;
+// 信任快道：若粗排距离 < 0.30，视为完美匹配，跳过本地精排以实现极速响应。
+// Fast Track: If vector distance < 0.30, treat as an exact match and skip local rerank for ultra-fast response.
+                //  G_TRUST = 0.30;
+// 误杀抢救(粗排资格线)：粗排距离必须 < 0.50，证明大方向相关，才有资格触发抢救。
+// Rescue Mechanism (Embed Qualifier): Vector distance must be < 0.50 to prove general semantic relevance for a rescue attempt.
+                //  G_COMP_EMBED = 0.50;
+// 误杀抢救(精排触发线)：满足粗排资格且精排给出极差分数(距离>0.80)时，强制拉回及格线，交由云端裁决。
+// Rescue Mechanism (Rerank Trigger): If embed qualifies but rerank score is terrible (> 0.80), force a passing grade for cloud LLM to decide.
+                //  G_COMP_RERANK = 0.80;
+// ==========================================
+// ⚙️ Performance, Cost & Concurrency Control
+// ==========================================
+// 本地精排候选池：从粗排最多取 10 条进入本地打分（本地无 Token 成本，可适度扩大）。
+// Local Rerank Pool: Fetch up to 10 items for local scoring (free of token cost, so pool can be larger).
+                //  G_MAX_RERANK = 10;
+// 云端上下文限制：最终只取前 3 条发往云端大模型，控制成本并防止 AI 注意力分散。
+// Cloud Context Limit: Send only the top 3 items to the cloud LLM to save tokens and keep the AI focused.
+                //  G_FINAL_LIMIT = 3;
+// 精排熔断时长(秒)：异步精排最多等待 2 秒，超时直接降级返回粗排结果，保障接口响应速度。
+// Rerank Timeout (sec): Wait max 2 seconds for async reranking. If timeout occurs, fallback to vector results to ensure responsiveness.
+                //  G_RERANK_TIMEOUT = 2;
 // DJL本地精排 + 云端Qwen，这里定制专属的 4 个阈值
-                    G_SIMILARITY = 0.85;
-                    G_TRUST = 0.30;
-                    G_COMP_EMBED = 0.50;
-                    G_COMP_RERANK = 0.80;
 
-                    G_MAX_RERANK = 10;    // 本地不花钱，可以多看几个
-                    G_FINAL_LIMIT = 3;
-
-                    G_FINAL_LIMIT = 3;
-                    G_RERANK_TIMEOUT = 2;    // 本地超过 2s 肯定有问题，不等了
+                    G_SIMILARITY     = AiConfig.getDoubleConfig("rag.threshold.similarity", 0.85);
+                    G_TRUST          = AiConfig.getDoubleConfig("rag.threshold.trust", 0.30);
+                    G_COMP_EMBED     = AiConfig.getDoubleConfig("rag.threshold.comp_embed", 0.50);
+                    G_COMP_RERANK    = AiConfig.getDoubleConfig("rag.threshold.comp_rerank", 0.80);
+                    G_MAX_RERANK     = AiConfig.getIntConfig("rag.limit.max_rerank", 10);
+                    G_FINAL_LIMIT    = AiConfig.getIntConfig("rag.limit.final_limit", 3);
+                    G_RERANK_TIMEOUT = AiConfig.getIntConfig("rag.timeout.rerank", 2);
+// 🌟 新增：读取高级阈值
+                    G_RERANK_TRIGGER_MAX = AiConfig.getDoubleConfig("rag.threshold.rerank_trigger_max", 0.60);
+                    G_RESCUE_SCORE       = AiConfig.getDoubleConfig("rag.threshold.rescue_score", 0.60);
 
                     DJLLocalClient djlLocalClient= new DJLLocalClient();
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
@@ -258,7 +365,7 @@ import okhttp3.ConnectionPool;
                             "qwen-turbo",          // 快速、低成本
                             "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
                             CLIENT,
-                            aliyunApiKey
+                            GLOBAL_QWEN_KEY
                     );
 
                     // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
@@ -267,7 +374,7 @@ import okhttp3.ConnectionPool;
                             "qwen-plus",           // 高质量回答
                             "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
                             CLIENT,
-                            aliyunApiKey
+                            GLOBAL_QWEN_KEY
                     );
 
                     // ── 组装路由器 ────────────────────────────────────────────────
@@ -302,9 +409,12 @@ import okhttp3.ConnectionPool;
             }
         }
         public static EmbeddingClient createQwenTurboClient() {
+           // String aliyunApiKey = AiConfig.getStringConfig("api.key.qwen", System.getenv("QWEN_API_KEY"));
+
             // 1. 从环境变量获取 API KEY
-            String aliyunApiKey = System.getenv("QWEN_API_KEY");
-            if (aliyunApiKey == null || aliyunApiKey.isEmpty()) {
+           // String aliyunApiKey = System.getenv("QWEN_API_KEY");
+
+            if (GLOBAL_QWEN_KEY == null || GLOBAL_QWEN_KEY.isEmpty()) {
                 throw new RuntimeException("❌ 错误：环境变量 QWEN_API_KEY 未设置！");
             }
 
@@ -318,7 +428,7 @@ import okhttp3.ConnectionPool;
                     "qwen-turbo",          // 聊天模型占位
                     "text-embedding-v3",   // 🌟 实际使用的 Embedding 模型
                     CLIENT,                // 这里的 CLIENT 是你类里定义的静态 OkHttpClient
-                    aliyunApiKey
+                    GLOBAL_QWEN_KEY
             );
         }
         public static ChatSession getSession(String clientId) {
@@ -334,6 +444,9 @@ import okhttp3.ConnectionPool;
 
 // ✅ 就是这里！4个核心距离参数在这里一键注入给 session
                 session.setThresholds(G_SIMILARITY, G_TRUST, G_COMP_EMBED, G_COMP_RERANK);
+                // 🌟 新增：注入高级阈值
+                session.setAdvancedThresholds(G_RERANK_TRIGGER_MAX, G_RESCUE_SCORE);
+
                 session.setTopK(G_MAX_RERANK, G_FINAL_LIMIT, G_RERANK_TIMEOUT);
                 // 💡 如果你把“召回数量”也提炼出来了，同样在这里一并注入：
                 // session.setTopK(10, 3);
@@ -347,7 +460,7 @@ import okhttp3.ConnectionPool;
                 session.setRerankSys_prompt(globalRerankPrompt);   // 保留 session 自己存一份（给 warmUp 或日志用）
                 session.getRouter().setRerankPrompt(globalRerankPrompt); // 绑定到路由层
                 //session.setUseRerank(false);
-				session.setQueryMode("retrieveRerank");//fullText //retrieveOnly //retrieveRerank
+				session.setQueryMode(G_QUERY_MODE);//fullText //retrieveOnly //retrieveRerank
 
                 sessions.put(clientId, session);
                 System.out.println("🆕 为客户端 [" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
@@ -457,9 +570,7 @@ import okhttp3.ConnectionPool;
 	    }
 
 	    public static int getSessionCount() { return sessions.size(); }
-    public static void clearAllSessions() {
-        sessions.clear();
-    }
+
 
     /**
      * ⚡ 新增: 预热连接池
@@ -478,7 +589,8 @@ import okhttp3.ConnectionPool;
                 long start=System.currentTimeMillis();
                 ACTIVE_ROUTER.rewriter().generate("system", "hi");
                 // 改后
-                ACTIVE_ROUTER.rerank("hi", "hi");
+                //ACTIVE_ROUTER.rerank("hi", "hi");
+                ACTIVE_ROUTER.rerank("北京", "北京是中国的首都");
                 ACTIVE_ROUTER.finalLlm().generate("system", "hi");
 
                 ACTIVE_EMBED.embed("hello");
@@ -563,5 +675,28 @@ import okhttp3.ConnectionPool;
                 return "";
             }
         }
+        /**
+         * 释放单个用户的会话
+         */
+        public static void removeSession(String clientId) {
+            ChatSession session = sessions.remove(clientId);
+            if (session != null) {
+                session.close();
+                System.out.println("🗑️ 会话 [" + clientId + "] 已从管理器中移除。");
+            }
+        }
 
+        /**
+         * 释放所有会话（用于系统重启或内存告警时）
+         */
+        public static void clearAllSessions() {
+            System.out.println("🧹 正在清理所有历史会话...");
+            for (ChatSession session : sessions.values()) {
+                session.close();
+            }
+            sessions.clear();
+
+            // 顺便关闭全局线程池
+            ChatSession.shutdownExecutor();
+        }
     }

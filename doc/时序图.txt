@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    actor User as 小灵呼客户端 (LCall-voice-agent-Client)
+    participant Session as ChatSession (主控层)
+    participant Turbo as 云端大模型<br/>(Qwen-Turbo 重写)
+    participant Embed as 本地向量引擎<br/>(DJL Text2Vec)
+    participant Rerank as 本地精排引擎<br/>(DJL BGE-Reranker)
+    participant Plus as 云端大模型<br/>(Qwen-Plus 生成)
+
+    User->>Session: 发起提问 (ask)
+    
+    rect rgb(240, 248, 255)
+        Note right of Session: 阶段一：意图重写 (Rewrite)
+        Session->>Turbo: 发送: 当前提问 + 历史上下文
+        Turbo-->>Session: 返回: 补全指代的 OptimizedQuery
+    end
+
+    rect rgb(245, 245, 245)
+        Note right of Session: 阶段二：本地粗排 (Embedding Search)
+        Session->>Embed: 向量化 OptimizedQuery 并检索本地库
+        Embed-->>Session: 返回: Top-N 候选列表及距离 (Distance)
+    end
+
+    rect rgb(255, 250, 240)
+        Note right of Session: 阶段三：四级防线与交叉精排 (Rerank)
+        
+        alt 防线一：信任快道 (Distance < 0.30)
+            Note over Session: 距离极小，视为“上帝视角”绝对命中
+            Session->>Session: 性能熔断：直接放行，跳过精排
+        else 需要进一步确认
+            Session->>Rerank: 并发发送 Top-10 (最大耗时 2s)
+            Rerank-->>Session: 返回: 交叉打分 (Rerank Distance)
+            
+            opt 防线二：误杀抢救 (Rescue Mechanism)
+                Note over Session: 若 粗排距离 < 0.50 且 精排距离 > 0.80
+                Session->>Session: 强制拉回及格线 (Distance = 0.60)
+            end
+        end
+        
+        Session->>Session: 综合排序，截取 Top-3 (G_FINAL_LIMIT)
+    end
+
+    rect rgb(240, 255, 240)
+        Note right of Session: 阶段四：终极裁决与生成 (Final Generation)
+        
+        alt 防线四：终极拒答 (最优 Distance > 0.85)
+            Session-->>User: 拦截回复：“未找到相关业务说明”
+        else 通过校验
+            Session->>Plus: 发送: System Prompt (含 Top-3 知识) + Query
+            Plus-->>Session: 返回: 严格控制在80字以内的口语化回答
+            Session-->>User: 最终口语化回复
+        end
+    end

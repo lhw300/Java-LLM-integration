@@ -81,6 +81,13 @@ public class ChatSession {
 
 
 
+
+    // 🌟 新增：进入精排池的最大允许距离
+    private double rerankTriggerMax = 0.60;
+    // 🌟 新增：触发补偿后强行赋予的得分
+    private double rescueScore = 0.60;
+
+
     private int maxRerankCandidates = 5;       // 粗排后拿几条去精排
     private int finalContextLimit = 3;         // 最后给 AI 几条知识
     private int rerankTimeoutSeconds = 5;
@@ -134,7 +141,14 @@ public class ChatSession {
         this.trustThreshold = trust;
         this.compensateEmbedMax = compEmbedMax;
         this.compensateRerankMin = compRerankMin;
+
     }
+    // 🌟 新增：高级阈值注入
+    public void setAdvancedThresholds(double triggerMax, double rescueScore) {
+        this.rerankTriggerMax = triggerMax;
+        this.rescueScore = rescueScore;
+    }
+
     public void setTopK(int rerankCandidates, int contextLimit, int timeout) {
         this.maxRerankCandidates = rerankCandidates;
         this.finalContextLimit = contextLimit;
@@ -533,7 +547,7 @@ public class ChatSession {
                 // 这样它就能通过你设置的 0.82 阈值，进入 finalAsk
                 if (originalVectorDistance < 0.35 && rerankDist > 0.8) {
                     System.out.println("💡 [命中补偿] 摘要: " + item.summary + " 粗排距离 " + originalVectorDistance + " 极优，强制修正精排分。");
-                    item.distance = 0.6;
+                    item.distance = rescueScore;
                 } else {
                     item.distance = rerankDist;
                 }
@@ -549,10 +563,15 @@ public class ChatSession {
             candidates.sort(Comparator.comparingDouble(a -> a.distance));
             System.out.println("⏱️ 并行 Rerank 成功，耗时: " + (System.currentTimeMillis() - rerankStart) + " ms");
 
-        } catch (TimeoutException e) {
-            System.err.println("⚠️ Rerank 超时，执行降级方案。");
+        } catch (Exception e) {
+            System.err.println("⚠️ 部分精排任务超时，执行现有结果排序。");
+            // 💡 建议补上一句：取消未完成的任务，防止 CPU 被长期占用
+            for (CompletableFuture<Void> future : futures) {
+                if (!future.isDone()) {
+                    future.cancel(true);
+                }
+            }
         }
-
         return candidates.subList(0, Math.min(3, candidates.size()));
     }
     //“语义快道 (Semantic Fast Track)”。
@@ -584,7 +603,7 @@ public class ChatSession {
                 // 🚀 [绝对信任] 距离极小，视为“上帝视角”直接命中的条目，不参与精排耗时
                 System.out.println("绝对信任 直接命中 距离: " + formatDouble(item.distance) + " | 摘要: " + item.summary);
                 fastTrackItems.add(item);
-            } else if (item.distance < 0.6) {
+            } else if (item.distance < this.rerankTriggerMax) {
                 // 🔍 [待定筛选] 距离在 0.2-0.6 之间，可能相关，送去给精排做逻辑裁决
                 slowPool.add(item);
             }
@@ -623,7 +642,7 @@ public class ChatSession {
                 //if (originalDist < 0.35 && rerankDist > 0.8) {
                     System.out.println("💡 [命中补偿] 摘要: " + item.summary + " 粗排距离 " + originalDist + " 极优，强制修正精排分。");
 
-                    item.distance = 0.6;
+                    item.distance = rescueScore;
                 } else {
                     item.distance = rerankDist;
                 }
@@ -1057,5 +1076,38 @@ public class ChatSession {
     }
     public ModelRouter getRouter(){
         return router;
+    }
+    public void close() {
+        System.out.println("🗑️ 正在释放 ChatSession 资源...");
+
+        // 1. 清空历史记录
+        if (this.history != null) {
+            // 如果你的 ChatHistory 类没有 clear() 方法，可以直接 new 一个新的或者置空
+            this.history = null;
+        }
+        if (this.queryHistory != null) {
+            this.queryHistory = null;
+        }
+
+        // 2. 切断对大文本的引用
+        this.fulltext = null;
+        this.systemMessage = null;
+
+        System.out.println("✅ ChatSession 释放完毕。");
+    }
+
+    // 💡 针对静态线程池的全局关闭方法（在应用停机时调用）
+    public static void shutdownExecutor() {
+        if (rerankExecutor != null && !rerankExecutor.isShutdown()) {
+            System.out.println("🛑 正在关闭 Rerank 线程池...");
+            rerankExecutor.shutdown();
+            try {
+                if (!rerankExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                    rerankExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                rerankExecutor.shutdownNow();
+            }
+        }
     }
 }

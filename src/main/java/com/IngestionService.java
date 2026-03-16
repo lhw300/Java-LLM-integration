@@ -1,7 +1,7 @@
 package com;
 
 import okhttp3.OkHttpClient;
-import org.apache.poi.ss.usermodel.*;
+
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,6 +28,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.util.*;
 
+//excel import org.apache.poi.ss.usermodel.*;
 /**
  * 知识库自动化导入服务
  * 适配数据库表: enterprise_knowledge_qwen_1024
@@ -40,29 +41,49 @@ public class IngestionService {
     private static final String DB_USER = "postgres";
     private static final String DB_PASS = "call";
     private static final OkHttpClient CLIENT = new OkHttpClient();
-    private static final String LUCENE_PATH = "E:\\AI\\lucene_index";
-    public static void main(String[] args) throws Exception {
+     private static   String   lucenePath=null ;
 
+    public static void main(String[] args) throws Exception {
+            String LUCENE_PATH;
         // ==========================================
         // 🌟 配置区
         // ==========================================
         // 自动识别后缀，你可以将此处改为 .xlsx 进行测试
-        String filePath = "e:\\eit\\openai\\publishknowledge.xlsx";
-        filePath = "e:\\eit\\openai\\publishknowledge.txt";
-        String aiType = "qwen-online";
-        aiType="local";
+// 1. 动态获取配置根目录，优先 args[0]
+        String baseDir = (args.length > 0) ? args[0] : "e:\\ai";
+        baseDir = baseDir.replace("\\", "/");
+        if (baseDir.endsWith("/")) baseDir = baseDir.substring(0, baseDir.length() - 1);
+
+        // 2. 初始化配置中心
+        AiConfig.init(baseDir);
+// 3. 跨平台路径拼接
+        String storageType = AiConfig.getStringConfig("storage.type", "lucene");
+
+
+        // 获取配置中的相对路径 (例如 "config/publishknowledge.txt")
+        String rawFilePath = AiConfig.getStringConfig("path.knowledge", "config/publishknowledge.txt");
+
+        // 关键：Paths.get 会自动根据系统处理路径逻辑
+        String filePath = Paths.get(baseDir, rawFilePath).toString();
+        lucenePath     = Paths.get(baseDir, AiConfig.getStringConfig("path.lucene", "lucene_index")).toString();
+
+
+        String dbUrl = AiConfig.getStringConfig("db.url", "jdbc:postgresql://localhost:5432/postgres");
+        String dbUser = AiConfig.getStringConfig("db.user", "postgres");
+        String dbPass = AiConfig.getStringConfig("db.pass", "call");
+
         //aiType = "hybrid"; // 修改为 hybrid
-        System.out.println("🚀 启动知识库导入流水线...");
+        System.out.println("🚀 启动知识库导入流水线...storageType "+storageType+" filePath "+filePath);
         String tableName;
         // 1. 初始化客户端
         EmbeddingClient embedClient  ;
 
 
         // 2. 初始化环境（清空旧数据）
-        if (aiType.equalsIgnoreCase("local")) {
+        if (storageType.equalsIgnoreCase("lucene")) {
             embedClient = new DJLLocalClient();
             tableName = "N/A"; // 本地模式不需要表名
-            clearLuceneFolder(LUCENE_PATH);
+            clearLuceneFolder(lucenePath);
 
         } else {
             //clearPostgresTable("enterprise_knowledge_qwen_1024");  we use upsert
@@ -70,7 +91,7 @@ public class IngestionService {
             // 自动根据维度匹配表名，防止 768/1024 混淆
             tableName = "enterprise_knowledge_" + (embedClient.getDimension() == 768 ? "768" : "qwen_1024");
         }
-        System.out.println("🚀 模式: " + aiType + " | 维度: " + embedClient.getDimension());
+        System.out.println("🚀 模式: " + storageType + " | 维度: " + embedClient.getDimension());
 
 
 
@@ -113,7 +134,7 @@ public class IngestionService {
         // 🌟 2. 根据后缀名选择读取办法
         List<KnowledgeEntry> entries = new ArrayList<>();
         if (filePath.toLowerCase().endsWith(".xlsx") || filePath.toLowerCase().endsWith(".xls")) {
-            entries = readFromExcel(filePath);
+            //entries = readFromExcel(filePath);
         } else if (filePath.toLowerCase().endsWith(".txt")) {
             entries = readFromTxt(filePath);
         } else {
@@ -122,10 +143,10 @@ public class IngestionService {
         }
         // 1. 在循环外统一初始化 Lucene Writer (如果需要)
         IndexWriter luceneWriter = null;
-        if (aiType.equalsIgnoreCase("local")) {
+        if (storageType.equalsIgnoreCase("lucene")) {
             IndexWriterConfig config = new IndexWriterConfig(new StandardAnalyzer())
                     .setOpenMode(IndexWriterConfig.OpenMode.CREATE);
-            luceneWriter = new IndexWriter(FSDirectory.open(Paths.get(LUCENE_PATH)), config);
+            luceneWriter = new IndexWriter(FSDirectory.open(Paths.get(lucenePath)), config);
         }
 
 
@@ -172,7 +193,7 @@ public class IngestionService {
                 // String semanticText = String.format("内容主题：%s。详细描述：%s", summary, content);
 
 // --- 4. 分支存入 ---
-                if ("local".equalsIgnoreCase(aiType)) {
+                if ("lucene".equalsIgnoreCase(storageType)) {
 // 🌟 修正：使用循环外的写入器
                     Document doc = new Document();
                     doc.add(new StringField("id", entry.id, Field.Store.YES));
@@ -205,7 +226,7 @@ public class IngestionService {
         System.out.println("✨ 导入完成！共成功处理 " + successCount + " 条知识。");
         // 在 IngestionService.java 的 main 方法末尾
 // ... 循环处理完 10 条数据后
-        if ("local".equalsIgnoreCase(aiType)) {
+        if ("lucene".equalsIgnoreCase(storageType)) {
             System.out.println("✅ 正在提交索引...");
             luceneWriter.commit(); // 🌟 必须手动提交，否则 searchLucene 找不到索引
             luceneWriter.close();  // 🌟 关闭时也会自动提交
@@ -227,7 +248,7 @@ public class IngestionService {
 
         // 注意：实际生产中建议在循环外开启一次 IndexWriter，
         // 这里为了演示“简单点”，保持了单条打开逻辑，但大数据量下建议优化为批量
-        try (FSDirectory dir = FSDirectory.open(Paths.get(LUCENE_PATH));
+        try (FSDirectory dir = FSDirectory.open(Paths.get(lucenePath));
              IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(new StandardAnalyzer()).setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND))) {
 
             Document doc = new Document();
@@ -247,6 +268,7 @@ public class IngestionService {
     /**
      * XLSX 导入：增加深度调试逻辑，排查回车符丢失问题
      */
+    /*
     private static List<KnowledgeEntry> readFromExcel(String filePath) throws Exception {
         List<KnowledgeEntry> list = new ArrayList<>();
         try (InputStream is = Files.newInputStream(Paths.get(filePath));
@@ -295,6 +317,8 @@ public class IngestionService {
         }
         return list;
     }
+    */
+
     /**
      * 🧹 字段深度清洗工具
      * 作用：去除回车换行、剔除不可见控制字符、压缩多余空格
@@ -345,7 +369,8 @@ public class IngestionService {
         }
         return list;
     }
-    private static String getCellValue(Cell cell) {
+
+/*    private static String getCellValue(Cell cell) {
         if (cell == null) return "";
 
         // 强制使用 DataFormatter 可以更智能地获取显示文本，但手动处理类型更精准
@@ -385,6 +410,8 @@ public class IngestionService {
                 return "";
         }
     }
+    */
+
     /**
      * 🌟 核心修改：利用 PostgreSQL 的 ON CONFLICT 实现 Upsert
      /**
