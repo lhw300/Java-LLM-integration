@@ -1,4 +1,4 @@
-package com;
+package com.lcallai;
 
 /**
  * 模型路由器 - 按业务职责分派不同的模型实例

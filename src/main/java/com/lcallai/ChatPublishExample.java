@@ -1,8 +1,13 @@
 
-	package com;
+	package com.lcallai;
 
-	
-	public class ChatPublishExample {
+
+    import com.lcallai.ChatAnswer;
+    import com.lcallai.ChatSession;
+    import com.lcallai.SearchService;
+    import com.lcallai.SessionManager;
+
+    public class ChatPublishExample {
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
 
@@ -147,6 +152,6 @@
             }
 	        // 如果你需要在这个 main 方法跑完后立刻退出 Java 进程，
 	        // 记得在这里调用之前我们在 SearchService 里加的关掉 HikariCP 连接池的方法。
-	        SearchService.shutdown(); 
+	        SearchService.shutdown();
 	    }
 	}

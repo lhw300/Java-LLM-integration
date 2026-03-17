@@ -1,20 +1,19 @@
 mvn clean package -DskipTests
 
 pom.xml÷∏∂®¡À <mainClass>com.ChatPublishExample</mainClass>
-java -jar target/openai-0.0.1-SNAPSHOT.jar
-
+java -jar target/
 linux
 sudo chmod -R 755 /home/call/zulu17.64.17-ca-jdk17.0.18-linux-ubtuntu_x64
 
-cp /mnt/e/eit/openai/target/openai-0.0.1-SNAPSHOT.jar .
+cp /mnt/e/eit/openai/target/lcallai-1.0.jar .
 
 
 cp -r /mnt/e/AI/lucene_index   ai/
 rm ai/lucene_index/*.lock
 
-java -jar openai-0.0.1-SNAPSHOT.jar "/home/call/ai"
+java -jar lcallai-1.0.jar "/home/call/ai"
 
-java -Dfile.encoding=UTF-8 -cp "openai-0.0.1-SNAPSHOT.jar" com.DJLLocalClient "/home/call/ai"
+java -Dfile.encoding=UTF-8 -cp "lcallai-1.0.jar" com.lcallai.DJLLocalClient "/home/call/ai"
 
 
 

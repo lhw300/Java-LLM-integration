@@ -1,4 +1,4 @@
-package com;
+package com.lcallai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

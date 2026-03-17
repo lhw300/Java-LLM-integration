@@ -1,4 +1,4 @@
-package com;
+package com.lcallai;
 
 import ai.djl.huggingface.tokenizers.Encoding;
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;

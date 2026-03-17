@@ -1,9 +1,9 @@
-package com;
+package com.lcallai;
+
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.FSDirectory;
 import java.nio.file.Paths;
@@ -11,7 +11,7 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+
 public class SearchService {
     private static HikariDataSource dataSource;
     private static SearcherManager luceneSearcherManager;

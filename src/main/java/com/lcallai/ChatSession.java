@@ -1,28 +1,22 @@
-package com;
+package com.lcallai;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadFactory ;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.LinkedBlockingQueue;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+
 import java.util.Comparator; // 排序也需要这个
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
+
+
 /*
  * 1. ask() 函数：智能 Agent (Function Calling) 模式
 此函数将 AI 视为一个具备决策能力的 智能体。它不直接检索数据库，而是先询问 AI 是否需要外部工具的支持。

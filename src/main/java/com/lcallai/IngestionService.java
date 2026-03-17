@@ -1,8 +1,8 @@
-package com;
+package com.lcallai;
+
 
 import okhttp3.OkHttpClient;
 
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -12,20 +12,14 @@ import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.lucene.index.VectorSimilarityFunction;
-import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
-import ai.djl.repository.zoo.Criteria;
-import ai.djl.repository.zoo.ZooModel;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.index.VectorSimilarityFunction;
+
 import java.io.File;
 import java.nio.file.*;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
 import java.util.*;
 
 //excel import org.apache.poi.ss.usermodel.*;
