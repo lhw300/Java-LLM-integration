@@ -21,6 +21,6 @@ public class QueryHandler implements IntentHandler {
 
 
         // searchQuery 送检索，refinedQuery 记历史，ask3 内部跳过 performQueryRewrite
-        return session.ask3(result.refinedQuery ,false);
+        return session.askByQueryMode(result.refinedQuery ,false);
     }
 }

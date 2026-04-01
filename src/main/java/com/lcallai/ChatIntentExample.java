@@ -152,7 +152,29 @@ public class ChatIntentExample {
                     {"讲个笑话吧", "CHITCHAT"},                // 5. 歪楼闲聊
                     {"再见", "ACK"}                           // 6. 结束
             };
+        String[][] stressData2 = {
+                // 1. 正常业务开场
+                {"你好", "GREETING"},
+                {"我是李老师", "INFORM"},
 
+                // 2. 核心 RAG 逻辑 (触发: 重写 -> 768维检索 -> 10个样本重排)
+                {"怎么重置密码？", "QUERY"},
+
+                // 3. 业务引流与边界 (触发: executeChitchat 纯净模式)
+                {"讲个笑话吧", "CHITCHAT"},
+                {"你会写 Java 吗？", "CHITCHAT"},
+
+                // 4. 指令与实时交互 (触发: CommandHandler)
+                {"声音太小了，大声一点", "COMMAND"},
+                {"帮我转接人工客服", "COMMAND"},
+
+                // 5. 负面反馈与情绪识别 (触发: FeedbackHandler)
+                {"刚才那个密码不对，你们这系统真行", "FEEDBACK"},
+
+                // 6. 确认与收尾 (触发: 修正后的结束语拦截)
+                {"好的，我知道了", "ACK"},
+                {"再见", "ACK"}
+        };
 
         System.out.println("=== 自动化意图分发测试 (基于 SessionManager 内置注册) ===\n");
         String configPath = "e:\\ai";
@@ -162,7 +184,7 @@ public class ChatIntentExample {
 
        // SessionManager.warmUp();
         // 3. 执行集成测试
-        runIntegratedTest(stressData, sessionManager);
+        runIntegratedTest(stressData2, sessionManager);
 
         System.out.println("所有自动化链路测试完毕。");
     }

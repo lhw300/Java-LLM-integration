@@ -39,6 +39,7 @@ public class CommandHandler implements IntentHandler {
             case "ACTION_REPLAY"   -> new ChatAnswer(0, "__REPLAY__");
             case "ACTION_TRANSFER" -> new ChatAnswer(0, "__TRANSFER__");
             case "ACTION_VOL_UP"   -> new ChatAnswer(0, "__VOL_UP__");
+			 case "ACTION_HANGUP"   -> new ChatAnswer(0, "__HANGUP__");
             case "ACTION_VOL_DOWN" -> new ChatAnswer(0, "__VOL_DOWN__");
             default -> {
                 System.err.println("[CommandHandler] 未知动作码: " + code);

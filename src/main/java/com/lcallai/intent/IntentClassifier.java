@@ -42,15 +42,17 @@ public class IntentClassifier {
                → "翔云3.0支持在Windows10系统上安装吗？"  ✓
            - 其他 intent：直接返回用户原始输入，不做任何修改
         5. action_code (string|null) 仅 COMMAND 时必填，枚举值之一：
-           ACTION_REPLAY / ACTION_TRANSFER / ACTION_VOL_UP / ACTION_VOL_DOWN /
-           【重要约束】：只有当用户明确要求“重放/重听 (REPLAY)”、“转人工 (TRANSFER)”或“调节音量 (VOL)”时，才允许返回对应的 action_code。若用户意图是执行某个动作，但该动作不在上述枚举范围内，必须将 intent 判定为 QUERY，并将 action_code 设为 null。
+           ACTION_REPLAY / ACTION_TRANSFER / ACTION_VOL_UP / ACTION_VOL_DOWN / ACTION_HANGUP
+           【重要约束】：只有当用户明确要求“重放/重听 (REPLAY)”、“转人工 (TRANSFER)”或“调节音量 (VOL)”或 再见(HANGUP)时，才允许返回对应的 action_code。若用户意图是执行某个动作，但该动作不在上述枚举范围内，必须将 intent 判定为 QUERY，并将 action_code 设为 null。
         6. FEEDBACK 定义： 凡是包含用户对服务、产品或解决结果的主观态度、情绪评价、感谢表扬或抱怨建议的内容，必须判定为 FEEDBACK，并强制标注 sentiment 极性。
+        7. 若输入内容无法解析为具体业务意图且字数极少或语义混乱，请统一归类为 CHITCHAT
+
         判定示例：
         输入"好的"     → {"intent":"ACK","sub_intent":"ack","sentiment":null,"refined_query":"好的","action_code":null}
         输入"对就是这个" → {"intent":"ACK","sub_intent":"affirm","sentiment":null,"refined_query":"对就是这个","action_code":null}
         输入"不用了"    → {"intent":"ACK","sub_intent":"negate","sentiment":null,"refined_query":"不用了","action_code":null}
         输入"这软件太卡" → {"intent":"FEEDBACK","sub_intent":null,"sentiment":"negative","refined_query":"这软件太卡","action_code":null}
-        输入"大声点"    → {"intent":"COMMAND","sub_intent":null,"sentiment":null,"refined_query":"大声点","action_code":"ACTION_VOL_UP"}
+        输入"再见或挂了吧" → {"intent":"COMMAND","sub_intent":null,"sentiment":null,"refined_query":"再见","action_code":"ACTION_HANGUP"}
         输入"Win10能装吗"（上下文在讨论翔云3.0）→ {"intent":"QUERY","sub_intent":null,"sentiment":null,"refined_query":"翔云3.0支持在Windows10系统上安装吗？","action_code":null}
         输入"他的密码忘了"（上文说的是学生）→ {"intent":"QUERY","sub_intent":null,"sentiment":null,"refined_query":"学生忘记登录密码如何找回？","action_code":null}
         """;

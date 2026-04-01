@@ -399,17 +399,19 @@ public class ChatSession {
         IntentResult intentResult = intentClassifier.classify(text, queryHistory);
         System.out.println("[intentResult]= " + intentResult);
         System.out.println("🤖 [Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
-
+        // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等
+        //if its queryHandler, it will invoke ask_by_query_mode
         return intentDispatcher.dispatch(text, intentResult, this);
     }
 
-    public ChatAnswer ask_old(String text) {
+    public ChatAnswer askByQueryMode(String text,boolean isrewrite) {
         if("fullText".equalsIgnoreCase(queryMode)){
-            return askFullContext(text);
+            return askFullContext(text,isrewrite);
         }else //"retrieveOnly".equalsIgnoreCase(queryMode)   or   retrieveRerank
-            return ask3(text,true);
+            return askRerank(text,isrewrite);
 
     }
+    /*
     public ChatAnswer askIntent(String userQuery) {
         // 1. 调用全局分类器进行意图识别与指代消解
         // 注意：这里传入了当前 session 的 history 以支持多轮对话背景
@@ -422,8 +424,8 @@ public class ChatSession {
         // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等
         return intentDispatcher.dispatch(userQuery, intentResult, this);
     }
-
-    public ChatAnswer ask3 (String text,boolean isrewrite) {
+    */
+    public ChatAnswer askRerank (String text,boolean isrewrite) {
         System.out.println("🚀 执行高级 RAG 流程 (重构版 ask3)...isrewrite "+isrewrite);
         ChatAnswer ca = new ChatAnswer(-1,null);
 
@@ -1041,7 +1043,7 @@ public class ChatSession {
      * 全量知识库模式 (Stuffing Mode)
      * 逻辑：重写问题 -> 加载全量知识 -> 注入 System Prompt -> 生成回答
      */
-    public ChatAnswer askFullContext(String text) {
+    public ChatAnswer askFullContext(String text,boolean isrewrite) {
         System.out.println("🚀 执行全量知识库 Stuffing 流程 (askFullContext)...");
         ChatAnswer ca = new ChatAnswer(-1, null);
 
@@ -1054,7 +1056,15 @@ public class ChatSession {
         try {
             // 2. 步骤 1: Rewrite - 结合历史上下文生成优化查询
             // 确保在多轮对话中能够正确指代（如“他”、“那个”）
-            String optimizedQuery = performQueryRewrite(processedText);
+            //String optimizedQuery = performQueryRewrite(processedText);
+
+            String optimizedQuery =processedText;
+            if(isrewrite) {
+                // 步骤 1: Rewrite - 结合历史上下文生成优化查询
+                optimizedQuery = performQueryRewrite(processedText);
+            }
+
+
 
             // 3. 步骤 2: 加载全量知识库内容
             // 路径建议与你之前的 QwenFinalAsk 测试保持一致
