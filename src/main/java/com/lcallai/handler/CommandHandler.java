@@ -36,14 +36,15 @@ public class CommandHandler implements IntentHandler {
         System.out.println("[CommandHandler] 执行动作: " + code);
 
         return switch (code) {
-            case "ACTION_REPLAY"   -> new ChatAnswer(0, "__REPLAY__");
-            case "ACTION_TRANSFER" -> new ChatAnswer(0, "__TRANSFER__");
-            case "ACTION_VOL_UP"   -> new ChatAnswer(0, "__VOL_UP__");
-			 case "ACTION_HANGUP"   -> new ChatAnswer(0, "__HANGUP__");
-            case "ACTION_VOL_DOWN" -> new ChatAnswer(0, "__VOL_DOWN__");
+            case "ACTION_REPLAY"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.REPLAY,    null);
+            case "ACTION_TRANSFER" -> ChatAnswer.ofAction(result, ChatAnswer.Action.TRANSFER,  "正在为您转接人工客服，请稍候。");
+            case "ACTION_VOL_UP"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_UP,    null);
+            case "ACTION_VOL_DOWN" -> ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_DOWN,  null);
+            case "ACTION_HANGUP"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.HANGUP,    "好的，再见！");
+
             default -> {
                 System.err.println("[CommandHandler] 未知动作码: " + code);
-                yield new ChatAnswer(-1, "暂不支持该指令：" + code);
+                yield new ChatAnswer(-1, "暂不支持该指令",result);
             }
         };
     }

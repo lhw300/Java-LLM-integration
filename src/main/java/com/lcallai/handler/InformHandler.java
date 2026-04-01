@@ -21,6 +21,6 @@ public class InformHandler implements IntentHandler {
         // 存入 queryHistory，标记为用户背景，下一轮 rewrite 时可被 LLM 看到
         session.getQueryHistory().addMessage("Context", "[用户背景] " + rawText);
         System.out.println("[InformHandler] 已记录用户背景信息: " + rawText);
-        return new ChatAnswer(0, "好的，我已记录您的信息。请问有什么具体问题需要帮您解答吗？");
+        return new ChatAnswer(0, "好的，我已记录您的信息。请问有什么具体问题需要帮您解答吗？", result);
     }
 }

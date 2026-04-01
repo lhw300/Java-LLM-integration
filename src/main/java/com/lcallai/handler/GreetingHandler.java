@@ -25,11 +25,11 @@ public class GreetingHandler implements IntentHandler {
 
 
         if (userInput.matches(".*(再见|拜拜|下次聊|退出了|不聊了).*")) {
-            return new ChatAnswer(0, "好的，祝您工作顺利，");
+            return new ChatAnswer(0, "好的，祝您工作顺利，", intentRes);
         }
 
         // 5选1随机输出
         String text = POOL[new Random().nextInt(POOL.length)];
-        return new ChatAnswer(200, text);
+        return new ChatAnswer(200, text, intentRes);
     }
 }

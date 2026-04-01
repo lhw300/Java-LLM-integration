@@ -58,7 +58,7 @@ public class ChatSession {
     public IntentClassifier intentClassifier;
     public IntentDispatcher intentDispatcher;
     private  String sessionId=""; // 用于 FeedbackHandler 追踪负面计数
-
+    public IntentResult currentIntentResult;
 
 	private static final int MAX_HISTORY = 60;
 	private static final int MAX_QUERY_HISTORY = 16;
@@ -355,6 +355,7 @@ public class ChatSession {
     private ChatAnswer handleEmptyResult(String text, ChatAnswer ca) {
         ca.code = -100;
         ca.answer = "知识库中没有找到任何内容";
+        ca.intentResult = this.currentIntentResult;
         recordHistory(text, "【未匹配到相关知识】", "抱歉，知识库中没有找到任何内容。");
         return ca;
     }
@@ -365,6 +366,7 @@ public class ChatSession {
     private ChatAnswer handleLowSimilarity(String text, ChatAnswer ca) {
         ca.code = -101;
         ca.answer = "抱歉，我在知识库中未找到与您问题完全相关的信息。";
+        ca.intentResult = this.currentIntentResult;
         // 即使失败，也要在 queryHistory 中记录一次，保持上下文连贯
         queryHistory.addMessage("User", text);
         queryHistory.addMessage("Context", "【未匹配到相关知识】");
@@ -397,6 +399,7 @@ public class ChatSession {
             return new ChatAnswer(-1, "输入为空");
         }
         IntentResult intentResult = intentClassifier.classify(text, queryHistory);
+        this.currentIntentResult = intentResult;
         System.out.println("[intentResult]= " + intentResult);
         System.out.println("🤖 [Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
         // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等

@@ -22,12 +22,12 @@ public class AckHandler implements IntentHandler {
         String sub = result.subIntent;
 
         if ("affirm".equalsIgnoreCase(sub)) {
-            return new ChatAnswer(0, "好的，已确认。请问还有什么可以帮您？");
+            return new ChatAnswer(0, "好的，已确认。请问还有什么可以帮您？", result);
         }
         if ("negate".equalsIgnoreCase(sub)) {
-            return new ChatAnswer(0, "好的，没问题。如有需要随时告诉我。");
+            return new ChatAnswer(0, "好的，没问题。如有需要随时告诉我。", result);
         }
         // 普通 ack 或 GREETING 都走这里
-        return new ChatAnswer(0, "好的！请问有什么可以帮您？");
+        return new ChatAnswer(0, "好的！请问有什么可以帮您？", result);
     }
 }

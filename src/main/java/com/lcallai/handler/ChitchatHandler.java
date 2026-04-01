@@ -34,14 +34,12 @@ import com.lcallai.intent.IntentResult;
                 // 3. 执行对话
                 // executeFinalChat 会自动处理 history 的更新和 systemMessage 的构建
                 String ans= session.executeChitchat(chitchatIdentity, optimizedQuery);
-                ChatAnswer ca=new ChatAnswer(0,null);
-                ca.code=0;
-                ca.answer=ans;
-                return ca;
+                return new ChatAnswer(0, ans, result);
+
 
             } catch (Exception e) {
                 e.printStackTrace();
-                return new ChatAnswer(-1, "闲聊系统暂时休息了: " + e.getMessage());
+                return new ChatAnswer(-1, "闲聊系统暂时休息了: ");
             }
         }
     }

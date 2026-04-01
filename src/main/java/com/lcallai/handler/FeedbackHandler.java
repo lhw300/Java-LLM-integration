@@ -66,20 +66,26 @@ public class FeedbackHandler implements IntentHandler {
             if (count >= transferThreshold) {
                 negCountMap.remove(sid);
                 // 保持与 CommandHandler 类似的信号格式，方便中间件拦截
-                return new ChatAnswer(0, "__TRANSFER__ 抱歉给您带来极差体验，正在为您转接高级专家。");
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.TRANSFER, "抱歉给您带来极差体验，正在为您转接高级专家。");
+               // return new ChatAnswer(0, "__TRANSFER__ 抱歉给您带来极差体验，正在为您转接高级专家。");
             }
-            return new ChatAnswer(0, "非常抱歉让您产生困扰，您的反馈已记录，我会努力改进。");
+            return new ChatAnswer(0, "非常抱歉让您产生困扰，您的反馈已记录，我会努力改进。", result);
         }
 
         // 非负面情绪（Positive 或 Neutral）：只要用户心情好转，就重置计数
         negCountMap.remove(sid);
 
         if (result.sentiment == IntentResult.Sentiment.POSITIVE) {
-            return new ChatAnswer(0, "能帮到您真是太好了！我会继续加油的。");
+            return new ChatAnswer(0, "能帮到您真是太好了！我会继续加油的。", result);
         }
 
         // 默认中性反馈回复
-        return new ChatAnswer(0, "收到您的反馈，感谢您对粤教翔云3.0的支持。");
+        return new ChatAnswer(0, "收到您的反馈，感谢您 的支持。", result);
+
+
+
+
+
     }
     /** 手动重置某个 session 的负面计数（如用户主动问问题后可调用） */
     public void resetNegCount(String sessionId) {
