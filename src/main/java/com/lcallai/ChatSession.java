@@ -16,6 +16,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Comparator; // 排序也需要这个
 
+import com.lcallai.handler.*;
+import com.lcallai.intent.*;
+
 
 /*
  * 1. ask() 函数：智能 Agent (Function Calling) 模式
@@ -51,6 +54,12 @@ import java.util.Comparator; // 排序也需要这个
 适用场景：适用于开放式问答、知识库百科或不需要精确参数提取的泛闲聊场景。
  */
 public class ChatSession {
+
+    public IntentClassifier intentClassifier;
+    public IntentDispatcher intentDispatcher;
+    private  String sessionId=""; // 用于 FeedbackHandler 追踪负面计数
+
+
 	private static final int MAX_HISTORY = 60;
 	private static final int MAX_QUERY_HISTORY = 16;
 	private static final int MAX_ASK_HISTORY = 40;
@@ -92,7 +101,7 @@ public class ChatSession {
 
 
 	private ChatHistory history = new ChatHistory(MAX_ASK_HISTORY);
-	QueryHistory queryHistory = new QueryHistory();
+	public QueryHistory queryHistory = new QueryHistory();
 	private String systemMessage = "";
 	ChatAnswer ca = new ChatAnswer(-1,null);
 	// 🌟 核心：引入抽象的大模型客户端，而不是写死的 SessionManager 调用
@@ -142,7 +151,14 @@ public class ChatSession {
         this.rerankTriggerMax = triggerMax;
         this.rescueScore = rescueScore;
     }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId){this.sessionId=sessionId;}
+    public QueryHistory getQueryHistory() { return queryHistory; }
 
+    public void setIntentPipeline(IntentClassifier classifier, IntentDispatcher dispatcher) {
+        this.intentClassifier = classifier;
+        this.intentDispatcher = dispatcher;
+    }
     public void setTopK(int rerankCandidates, int contextLimit, int timeout) {
         this.maxRerankCandidates = rerankCandidates;
         this.finalContextLimit = contextLimit;
@@ -373,16 +389,42 @@ public class ChatSession {
         history.addMessage("assistant", assistantText);
         history.trim(MAX_HISTORY);
     }
+
+
+
     public ChatAnswer ask(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return new ChatAnswer(-1, "输入为空");
+        }
+        IntentResult intentResult = intentClassifier.classify(text, queryHistory);
+        System.out.println("[intentResult]= " + intentResult);
+        System.out.println("🤖 [Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
+
+        return intentDispatcher.dispatch(text, intentResult, this);
+    }
+
+    public ChatAnswer ask_old(String text) {
         if("fullText".equalsIgnoreCase(queryMode)){
             return askFullContext(text);
         }else //"retrieveOnly".equalsIgnoreCase(queryMode)   or   retrieveRerank
-            return ask3(text);
+            return ask3(text,true);
 
     }
+    public ChatAnswer askIntent(String userQuery) {
+        // 1. 调用全局分类器进行意图识别与指代消解
+        // 注意：这里传入了当前 session 的 history 以支持多轮对话背景
+        IntentResult intentResult = intentClassifier.classify(userQuery, this.queryHistory);
 
-    public ChatAnswer ask3(String text) {
-        System.out.println("🚀 执行高级 RAG 流程 (重构版 ask3)...");
+        // 2. 打印识别出的意图以便调试
+        System.out.println("🤖 [Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
+
+        // 3. 通过派发器执行对应的 Handler 逻辑
+        // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等
+        return intentDispatcher.dispatch(userQuery, intentResult, this);
+    }
+
+    public ChatAnswer ask3 (String text,boolean isrewrite) {
+        System.out.println("🚀 执行高级 RAG 流程 (重构版 ask3)...isrewrite "+isrewrite);
         ChatAnswer ca = new ChatAnswer(-1,null);
 
         // 1. 预处理：合法性检查与长度截断
@@ -394,8 +436,11 @@ public class ChatSession {
 
         try {
             long requeryStart=System.currentTimeMillis();
-            // 步骤 1: Rewrite - 结合历史上下文生成优化查询
-            String optimizedQuery = performQueryRewrite(processedText);
+            String optimizedQuery =processedText;
+            if(isrewrite) {
+                // 步骤 1: Rewrite - 结合历史上下文生成优化查询
+                  optimizedQuery = performQueryRewrite(processedText);
+            }
             System.out.println("rewrite耗时="+(System.currentTimeMillis() - requeryStart) + " ms");
 
             // 步骤 2: Retrieve - 两阶段检索（粗排 + 本地 Qwen 精排）
@@ -418,7 +463,7 @@ public class ChatSession {
             // 🌟 5. 核心：执行封装好的动作
             // 记录摘要历史（用于下一轮重写）
             recordQueryHistory(processedText, finalItems);
-
+            System.out.println("executeFinalChat fullCtx: " + fullCtx.toString());
             // 执行 AI 生成答案（用于当前回答）
             String ans = executeFinalChat(fullCtx.toString(), optimizedQuery);
             if(ans!=null) {
@@ -679,7 +724,30 @@ public class ChatSession {
         queryHistory.addMessage("Context", sumCtx.toString().trim());
         queryHistory.trim(MAX_QUERY_HISTORY);
     }
+    public String executeChitchat(String chitchatIdentity, String query) throws Exception {
+        // 1. 设置极简系统提示词（不带业务知识库，只带身份定义）
+        // 这样就不会触发 [背景知识] 相关的逻辑映射
+        this.systemMessage = chitchatIdentity;
+        history.addMessage("system", systemMessage);
 
+        // 2. 正常加入当前问题
+        history.addMessage("user", query);
+        history.trim(MAX_HISTORY);
+
+        // 3. 直接调用 LLM，不经过 SearchService 检索
+        long chatStart = System.currentTimeMillis();
+        String answer = router.finalLlm().chat(history.toJsonArray());
+        System.out.println("⏱️ 闲聊生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
+
+        // 4. 存档回复
+        if (answer != null && !answer.isEmpty()) {
+            history.addMessage("assistant", answer);
+            // 记录到 queryHistory 保证下一轮重写知道刚才聊了什么
+            queryHistory.addMessage("User", query);
+            queryHistory.addMessage("Context", "【轻量闲聊】");
+        }
+        return answer;
+    }
     /**
      * 动作 2：执行最终对话并处理存档 (替换原 generateFinalAnswer 的核心部分)
      */

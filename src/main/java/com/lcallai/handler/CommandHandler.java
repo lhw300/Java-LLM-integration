@@ -1,0 +1,49 @@
+package com.lcallai.handler;
+
+import com.lcallai.ChatAnswer;
+import com.lcallai.ChatSession;
+import com.lcallai.intent.IntentHandler;
+import com.lcallai.intent.IntentResult;
+
+/**
+ * COMMAND 处理器
+ *
+ * 将 action_code 转换为系统信号码返回给调用方。
+ * 约定：ChatAnswer.answer 以 "__" 开头的字符串为内部信号，由上层中间件（电话系统/前端）拦截执行。
+ *
+ * 支持的动作码：
+ *   ACTION_REPLAY    → 重播上一条回复
+ *   ACTION_TRANSFER  → 转接人工客服
+ *   ACTION_VOL_UP    → 调高音量
+ *   ACTION_VOL_DOWN  → 调低音量
+ *
+ * 扩展方式：在 switch 里增加新的 case，无需修改其他类。
+ */
+public class CommandHandler implements IntentHandler {
+
+    @Override
+    public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
+        String code = result.actionCode;
+
+        // 1. 防御：如果模型判断为 COMMAND 但没给 code（比如“帮我安装”、“我要查话费”）
+        if (code == null || code.isBlank() || "null".equalsIgnoreCase(code)) {
+            // 既然是出版社业务，这里可以做一层业务引导
+            System.err.println("[CommandHandler] action_code 为空，原始输入: " + rawText);
+            return new ChatAnswer(0, "收到您的指令，但我目前只能帮您转人工 或者重复说上一次 或您可以直接描述您遇到的问题。");
+        }
+
+
+        System.out.println("[CommandHandler] 执行动作: " + code);
+
+        return switch (code) {
+            case "ACTION_REPLAY"   -> new ChatAnswer(0, "__REPLAY__");
+            case "ACTION_TRANSFER" -> new ChatAnswer(0, "__TRANSFER__");
+            case "ACTION_VOL_UP"   -> new ChatAnswer(0, "__VOL_UP__");
+            case "ACTION_VOL_DOWN" -> new ChatAnswer(0, "__VOL_DOWN__");
+            default -> {
+                System.err.println("[CommandHandler] 未知动作码: " + code);
+                yield new ChatAnswer(-1, "暂不支持该指令：" + code);
+            }
+        };
+    }
+}

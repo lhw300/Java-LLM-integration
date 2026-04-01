@@ -18,6 +18,8 @@
 	import okhttp3.Request;
 	import okhttp3.RequestBody;
 	import okhttp3.Response;
+    import com.lcallai.handler.*;
+    import com.lcallai.intent.*;
 
 	public class SessionManager {
         public static  String configPath="d:\\ai";
@@ -48,6 +50,9 @@
         private static LlmClient ACTIVE_LLM = null;
         private static EmbeddingClient ACTIVE_EMBED = null;
         private static String ACTIVE_TABLE = null; // 🌟 记录当前激活的表名
+
+        public static IntentClassifier ACTIVE_INTENT_CLASSIFIER;
+        public static IntentDispatcher ACTIVE_INTENT_DISPATCHER;
 
       //  public static String LUCENE_PATH = null; //
 	    private static final Map<String, ChatSession> sessions = new ConcurrentHashMap<>();
@@ -402,6 +407,22 @@
                 }
 
 
+
+                IntentClassifier intentClassifier = new IntentClassifier(ACTIVE_ROUTER.rewriter());
+
+                IntentDispatcher intentDispatcher = new IntentDispatcher()
+                        .register(IntentResult.Intent.QUERY,    new QueryHandler())
+                        .register(IntentResult.Intent.FEEDBACK, new FeedbackHandler())
+                        .register(IntentResult.Intent.COMMAND,  new CommandHandler())
+                        .register(IntentResult.Intent.ACK,      new AckHandler())
+                        .register(IntentResult.Intent.INFORM,   new InformHandler())
+                        .register(IntentResult.Intent.GREETING, new GreetingHandler())
+                        .register(IntentResult.Intent.CHITCHAT, new ChitchatHandler());
+
+                ACTIVE_INTENT_CLASSIFIER = intentClassifier;
+                ACTIVE_INTENT_DISPATCHER = intentDispatcher;
+
+
             } catch (Exception e) {
 
                 System.err.println("❌ [System Init] 初始化失败！");
@@ -442,7 +463,7 @@
             if (session == null) {
                 // 1. 创建基础能力会话
                 session = new ChatSession(ACTIVE_ROUTER, ACTIVE_EMBED, ACTIVE_TABLE);
-
+                session.setSessionId(clientId);
 // ✅ 就是这里！4个核心距离参数在这里一键注入给 session
                 session.setThresholds(G_SIMILARITY, G_TRUST, G_COMP_EMBED, G_COMP_RERANK);
                 // 🌟 新增：注入高级阈值
@@ -463,6 +484,7 @@
                 //session.setUseRerank(false);
 				session.setQueryMode(G_QUERY_MODE);//fullText //retrieveOnly //retrieveRerank
 
+                session.setIntentPipeline(ACTIVE_INTENT_CLASSIFIER, ACTIVE_INTENT_DISPATCHER);
                 sessions.put(clientId, session);
                 System.out.println("🆕 为客户端 [" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
             }

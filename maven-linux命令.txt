@@ -1,3 +1,12 @@
+After saving this pom.xml, please run the following in your terminal to clear out the old, mismatched JARs:
+作用： 执行完整的构建并将生成的 JAR 包安装到本地仓库 (.m2/repository)，供电脑上其他项目引用。
+特点： 使用 -U 强制从远程仓库检查并下载依赖的最新版本（如 Jackson 或阿里云 SDK），是解决版本冲突和“找不到类”报错的首选。
+Force Maven Update:
+ mvn clean install -U
+
+作用： 仅在当前项目的 target 目录生成打包文件（如 JAR 或 WAR），不会影响本地仓库。
+特点： 使用 -DskipTests 跳过单元测试的运行，主要用于代码逻辑修改后的快速打包和生产环境部署。
+
 mvn clean package -DskipTests
 
 pom.xml指定了 <mainClass>com.ChatPublishExample</mainClass>

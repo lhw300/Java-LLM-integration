@@ -1,0 +1,39 @@
+﻿
+
+客户呼入-->首播机器人导航音（提示客户说话）--->小灵呼识别之	-----超时等4-5s，不管说不说，多要进行传送
+
+
+
+
+小灵呼传送:
+
+text:客户说的话,如果超时不说话,传送"_timeout_"
+sn:会话id,一个来电一个
+crid:本次请求ID
+ch:外线通道号
+phone:客户来电号码
+
+
+{"text":"中国的首都在哪里","sn":"20013014",
+"call_date":"2025-03-20","crid":"17424365717930_0",
+"start_time":"10:09:31","ch":"0","vo_id":"ai_send","phone":"2233233","flow":"当前流程名"}
+
+
+第三方接口应答格式：
+ 1.  
+{"type":"类型", "target":"目标", "value":"值", "fail":"播放失败调用的ivr流程",
+"success":"播放成功调用的ivr流程","text":"要播放的内容,如果value是func_playtts"}
+ 
+
+类型:    invoke: 调用
+
+目标: 	 
+		flow:流程
+		func: 模块
+	 
+
+值:  	填流程名: invoke /flow
+	func_playtts :动态tts  invoke/func
+
+
+ 

@@ -134,7 +134,7 @@
                     // 1. 记录开始时间
                     long questionStart = System.currentTimeMillis();
                     // 核心调用：内部会经历 Rewrite -> Retrieve -> Generation
-                    ChatAnswer answer = session.ask(userQuery);
+                    ChatAnswer answer = session.ask_old(userQuery);
                     long totalDuration = System.currentTimeMillis() - questionStart;
                     System.out.println("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
                     System.out.println("⏱️ 该轮次总响应耗时: " + totalDuration + " ms");
