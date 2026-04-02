@@ -46,6 +46,9 @@
         private static String globalRerankPrompt;
         private static String globalFullText;
 
+        private static String globalChitchatPrompt;
+        private static String globalClassifyPrompt;
+
         private static ModelRouter     ACTIVE_ROUTER = null;
         private static LlmClient ACTIVE_LLM = null;
         private static EmbeddingClient ACTIVE_EMBED = null;
@@ -106,8 +109,16 @@
                 String promptRerankPath  = base + AiConfig.getStringConfig("path.prompt.rerank", "/config/prompt_rerank_v1_publish.txt");
                 String knowledgePath     = base + AiConfig.getStringConfig("path.knowledge", "/config/knowledge_full.txt");
 
+                String globalChitchatPromptPath     = base + AiConfig.getStringConfig("path.prompt.chitchat", "/config/chitchat_prompt.txt");
+                String globalClassifyPromptPath     = base + AiConfig.getStringConfig("path.prompt.classify", "/config/prompt_classify_v1.txt");
+
+
+                System.out.println("globalClassifyPromptPath "+globalClassifyPromptPath);
+
                 // Lucene 路径同样动态拼接
                // LUCENE_PATH = base + AiConfig.getStringConfig("path.lucene", "/lucene_index");
+
+
 
 
                 G_QUERY_MODE = AiConfig.getStringConfig("rag.query.mode", "retrieveRerank");
@@ -119,6 +130,16 @@
                 globalAskPrompt     = loadPromptFromFile(promptAskPath, "");
                 globalRerankPrompt  = loadPromptFromFile(promptRerankPath, "");
                 globalFullText      = loadKnowledgeBase(knowledgePath);
+
+                  globalChitchatPrompt = loadPromptFromFile(
+                        globalChitchatPromptPath,
+                        "你是一个专业且幽默的智能电话客服。请简要回答用户的闲聊，并引导其咨询规定的业务。"  // 默认值兜底
+                );
+                // init() 里加载
+                  globalClassifyPrompt = loadPromptFromFile(
+                        globalClassifyPromptPath,
+                        "" // 空串触发兜底默认值
+                );
 
                 // 🌟 2. 从配置表加载 RAG 阈值参数 (后方数值为文件未找到时的默认兜底值)
                 /*
@@ -408,7 +429,13 @@
 
 
 
-                IntentClassifier intentClassifier = new IntentClassifier(ACTIVE_ROUTER.rewriter());
+
+                // 装配时传入
+                IntentClassifier intentClassifier = new IntentClassifier(
+                        ACTIVE_ROUTER.rewriter(),
+                        globalClassifyPrompt
+                );
+
 
                 IntentDispatcher intentDispatcher = new IntentDispatcher()
                         .register(IntentResult.Intent.QUERY,    new QueryHandler())
@@ -417,7 +444,7 @@
                         .register(IntentResult.Intent.ACK,      new AckHandler())
                         .register(IntentResult.Intent.INFORM,   new InformHandler())
                         .register(IntentResult.Intent.GREETING, new GreetingHandler())
-                        .register(IntentResult.Intent.CHITCHAT, new ChitchatHandler());
+                        .register(IntentResult.Intent.CHITCHAT, new ChitchatHandler(globalChitchatPrompt));
 
                 ACTIVE_INTENT_CLASSIFIER = intentClassifier;
                 ACTIVE_INTENT_DISPATCHER = intentDispatcher;

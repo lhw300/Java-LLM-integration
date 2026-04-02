@@ -176,6 +176,31 @@ public class ChatIntentExample {
                 {"再见", "ACK"}
         };
 
+
+
+        String[][] stressData3 = {
+                // 1. 正常业务开场
+                {"你好", "GREETING"},
+                {"我是李老师", "INFORM"},
+
+                // 2. 核心 RAG 逻辑 (触发: 重写 -> 768维检索 -> 10个样本重排)
+                {"怎么重置密码？", "QUERY"},
+                {"我没听清楚", "COMMAND"},
+                {"你说什么", "COMMAND"}
+
+        };
+        String[][] stressData4 = {
+                // ── REPLAY 边界：口语变体 ──────────────────────────────────────
+                {"什么", "COMMAND"},              // 极简口语，最容易误判 CHITCHAT
+                {"啊？", "COMMAND"},              // 语气词型重播请求
+                {"能再说一遍吗", "COMMAND"},       // 礼貌型
+                {"刚才你说的是什么", "COMMAND"},   // 带"刚才"的指代型
+
+                // ── REPLAY vs CHITCHAT 边界（首句 vs 非首句由上下文决定）────────
+                // 注意：以下两条需放在同一个 session 里跑才有意义
+                {"你好", "GREETING"},             // 首句，此时 AI 没说过话
+                {"你说什么", "COMMAND"},          // 非首句，AI 已有回复，应判 REPLAY
+        };
         System.out.println("=== 自动化意图分发测试 (基于 SessionManager 内置注册) ===\n");
         String configPath = "e:\\ai";
 
@@ -184,42 +209,50 @@ public class ChatIntentExample {
 
        // SessionManager.warmUp();
         // 3. 执行集成测试
-        runIntegratedTest(stressData2, sessionManager);
-
+       // runIntegratedTest(stressData4, sessionManager);
+        runIntegratedTest(stressData2);
         System.out.println("所有自动化链路测试完毕。");
     }
 
-    private static void runIntegratedTest(String[][] testData, SessionManager sessionManager) {
-        // 模拟一个持续的会话 ID
+    private static void runIntegratedTest(String[][] testData) {
         String sessionId = "SESSION_" + UUID.randomUUID().toString().substring(0, 8);
         ChatSession session = SessionManager.getSession(sessionId);
-
-
 
         for (String[] test : testData) {
             String userInput = test[0];
             String expectedIntent = test[1];
-           // IntentResult intentResult = intentClassifier.classify(text, queryHistory);
-            // 第一步：分类 (传入 session.getMessages() 以实现指代补全)
-            IntentResult result = session.intentClassifier.classify(userInput, session.queryHistory);
 
-            // 第二步：直接交给 SessionManager 执行业务
-            // 此时 dispatcher 会根据 init() 里注册好的 Handler 自动分发
-           // IntentResult result = sessionManager.handleIntent(intent, userInput, session);
-            displayTestLog(userInput,  result, null, expectedIntent);
-            System.out.println("dispatch ... ");
-            ChatAnswer ca=session.intentDispatcher.dispatch(userInput, result, session);
-            // 第三步：格式化输出结果
-            System.out.println("dispatch ... ca code="+ca.code+" answer="+ca.answer);
+            System.out.println("==================================================");
+            System.out.println("👤 用户输入: " + userInput + " | 预期意图: " + expectedIntent);
 
-            // 第四步：维护上下文 (由 Example 负责更新历史，或者你的 SessionManager 内部已处理)
-          //  if (result != null) {
-        //        session.addMessage("user", userInput);
-            //    session.addMessage("assistant", result.getReply());
-          //  }
+            // 直接调用 ask()，分类+派发全部内聚在里面
+            ChatAnswer ca = session.ask(userInput);
+
+            // 从返回结果里取 intentResult 做校验，不再自己调分类器
+            IntentResult result = ca.intentResult;
+            if (result != null) {
+                String actual = result.intent.name();
+                boolean pass = actual.equalsIgnoreCase(expectedIntent);
+
+                System.out.printf("[%s] 识别意图: %-10s | 预期意图: %s%n",
+                        pass ? "PASS" : "FAIL", actual, expectedIntent);
+
+                if (result.refinedQuery != null && !result.refinedQuery.isEmpty())
+                    System.out.println("     └─ [优化查询]: " + result.refinedQuery);
+                if (result.subIntent != null)
+                    System.out.println("     └─ [子意图]: " + result.subIntent);
+                if (result.actionCode != null)
+                    System.out.println("     └─ [动作码]: " + result.actionCode);
+                if (result.sentiment != IntentResult.Sentiment.NEUTRAL)
+                    System.out.println("     └─ [情绪极性]: " + result.sentiment);
+            }
+
+            System.out.println("     └─ [状态码]: " + ca.code);
+            System.out.println("     └─ [Action]: " + ca.action);
+            System.out.println("     └─ [AI回复]: " + ca.answer);
+            System.out.println("--------------------------------------------------");
         }
     }
-
     private static void displayTestLog(String input, IntentResult intentRes, ChatAnswer answer, String expected) {
         // 1. 获取意图名称 (注意：你代码里 intent 是枚举)
         String actual = intentRes.intent.name();

@@ -392,19 +392,43 @@ public class ChatSession {
         history.trim(MAX_HISTORY);
     }
 
+     /**
+     * 获取上一次 AI 的回复文本，供 REPLAY 使用
+     * 从 history 尾部往前找第一条 role=assistant 的消息
+     */
+    public String getLastAnswer() {
+        List<ChatHistory.Message> msgs = history.getMessages();
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            if ("assistant".equalsIgnoreCase(msgs.get(i).getRole())) {
+                return msgs.get(i).getContent();
+            }
+        }
+        return null;
+    }
 
-
+    public String askString(String text){
+        ChatAnswer ca=ask(text);
+        return ca.toJsonString();
+    }
     public ChatAnswer ask(String text) {
         if (text == null || text.trim().isEmpty()) {
             return new ChatAnswer(-1, "输入为空");
         }
+        long t0 = System.currentTimeMillis();
         IntentResult intentResult = intentClassifier.classify(text, queryHistory);
+        long t1 = System.currentTimeMillis();
+        System.out.println("⏱️ [1] 意图分类耗时: " + (t1 - t0) + " ms  intent=" + intentResult.intent);
+
         this.currentIntentResult = intentResult;
         System.out.println("[intentResult]= " + intentResult);
         System.out.println("🤖 [Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
         // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等
         //if its queryHandler, it will invoke ask_by_query_mode
-        return intentDispatcher.dispatch(text, intentResult, this);
+        ChatAnswer ca =intentDispatcher.dispatch(text, intentResult, this);
+        long t2 = System.currentTimeMillis();
+        System.out.println("⏱️ [2] Handler执行耗时: " + (t2 - t1) + " ms");
+        System.out.println("⏱️ [总] ask()全链路耗时: " + (t2 - t0) + " ms");
+        return ca;
     }
 
     public ChatAnswer askByQueryMode(String text,boolean isrewrite) {
@@ -1089,7 +1113,7 @@ public class ChatSession {
             String ans = executeFinalChat(fulltext, optimizedQuery);
             long chatDuration = System.currentTimeMillis() - chatStart;
 
-            System.out.println("⏱️ [Step 2] AI 生成答案耗时: " + chatDuration + " ms");
+           System.out.println("⏱️ [Step 2] AI executeFinalChat 生成答案耗时: " + chatDuration + " ms");
             if (ans != null) {
                 ca.answer = ans;
                 ca.code = 0;

@@ -35,17 +35,31 @@ public class CommandHandler implements IntentHandler {
 
         System.out.println("[CommandHandler] 执行动作: " + code);
 
-        return switch (code) {
-            case "ACTION_REPLAY"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.REPLAY,    null);
-            case "ACTION_TRANSFER" -> ChatAnswer.ofAction(result, ChatAnswer.Action.TRANSFER,  "正在为您转接人工客服，请稍候。");
-            case "ACTION_VOL_UP"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_UP,    null);
-            case "ACTION_VOL_DOWN" -> ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_DOWN,  null);
-            case "ACTION_HANGUP"   -> ChatAnswer.ofAction(result, ChatAnswer.Action.HANGUP,    "好的，再见！");
+        // 传统写法：直接对 code 进行判断，并在每个 case 中显式 return
+        switch (code) {
+            case "ACTION_REPLAY":
+                String lastAnswer = session.getLastAnswer();
+                if (lastAnswer == null || lastAnswer.isBlank()) {
+                    return new ChatAnswer(ChatAnswer.CODE_OK, "暂时没有可重播的内容。", result);
+                }
+                // VOIP 层收到 Action.REPLAY 直接重播这个文本
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.REPLAY, lastAnswer);
 
-            default -> {
+            case "ACTION_TRANSFER":
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.TRANSFER, "正在为您转接人工客服，请稍候。");
+
+            case "ACTION_VOL_UP":
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_UP, null);
+
+            case "ACTION_VOL_DOWN":
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_DOWN, null);
+
+            case "ACTION_HANGUP":
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.HANGUP, "好的，再见！");
+
+            default:
                 System.err.println("[CommandHandler] 未知动作码: " + code);
-                yield new ChatAnswer(-1, "暂不支持该指令",result);
-            }
-        };
+                return new ChatAnswer(-1, "暂不支持该指令", result);
+        }
     }
 }

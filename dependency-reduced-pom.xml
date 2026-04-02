@@ -7,6 +7,18 @@
   <build>
     <plugins>
       <plugin>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <addClasspath>true</addClasspath>
+              <mainClass>com.lcallai.ChatPublishExample</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.5.0</version>
         <executions>
@@ -16,6 +28,13 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>lib</shadedClassifierName>
+              <artifactSet>
+                <excludes>
+                  <exclude>lcallai:lcallai</exclude>
+                </excludes>
+              </artifactSet>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
@@ -28,9 +47,6 @@
               </filters>
               <transformers>
                 <transformer />
-                <transformer>
-                  <mainClass>com.lcallai.ChatPublishExample</mainClass>
-                </transformer>
               </transformers>
             </configuration>
           </execution>

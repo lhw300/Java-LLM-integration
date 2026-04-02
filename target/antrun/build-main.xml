@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="maven-antrun-" default="main">
+  <target name="main">
+    <echo message="正在执行极速拷贝..." />
+    <copy file="target/lcallai-1.0.jar" todir="E:/EIT/VR8/cont/lib" failonerror="true" overwrite="true" />
+    <echo message="拷贝完成！" />
+  </target>
+</project>

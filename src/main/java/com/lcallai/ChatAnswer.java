@@ -1,7 +1,8 @@
 package com.lcallai;
 
 import com.lcallai.intent.IntentResult;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 /**
  * AI 处理结果，透传给 VOIP 应用层的统一响应结构。
  *
@@ -19,6 +20,8 @@ import com.lcallai.intent.IntentResult;
  * </pre>
  */
 public class ChatAnswer {
+    // 在 ChatAnswer 类顶部加一行
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     // =========================================================================
     // VOIP 动作枚举（取代 __TRANSFER__ 等魔法字符串）
@@ -160,5 +163,41 @@ public class ChatAnswer {
                 + ", action=" + action
                 + ", intent=" + intent
                 + ", answer='" + answer + "'}";
+    }
+    /**
+     * 将本次 AI 处理结果序列化为 JSON 字符串，供对外 HTTP/WebSocket 接口使用。
+     * 使用 Jackson 实现，字段说明见上方注释表格。
+     */
+    public String toJsonString() {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode root = mapper.createObjectNode();
+
+        // ── 基础字段 ──────────────────────────────────────────────
+        root.put("code",             code);
+        root.put("answer",           answer != null ? answer : "");
+        root.put("action",           action != null ? action.name() : Action.NONE.name());
+        root.put("should_terminate", shouldTerminate());
+
+        // ── IntentResult 展开字段 ─────────────────────────────────
+        if (intentResult != null) {
+            root.put("intent",        intentResult.intent.name());
+            root.put("sentiment",     intentResult.sentiment != null
+                    ? intentResult.sentiment.name() : "NEUTRAL");
+            root.put("sub_intent",    intentResult.subIntent);    // null 时 Jackson 输出 null
+
+            root.put("refined_query", intentResult.refinedQuery);
+        } else {
+            root.put("intent",        "UNKNOWN");
+            root.put("sentiment",     "NEUTRAL");
+            root.putNull("sub_intent");
+            root.putNull("refined_query");
+        }
+
+        try {
+            return mapper.writeValueAsString(root);
+        } catch (Exception e) {
+            // 序列化不应该失败，兜底返回最小 JSON
+            return "{\"code\":" + code + ",\"answer\":\"\",\"action\":\"NONE\"}";
+        }
     }
 }

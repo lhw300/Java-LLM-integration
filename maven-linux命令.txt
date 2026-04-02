@@ -7,7 +7,12 @@ Force Maven Update:
 作用： 仅在当前项目的 target 目录生成打包文件（如 JAR 或 WAR），不会影响本地仓库。
 特点： 使用 -DskipTests 跳过单元测试的运行，主要用于代码逻辑修改后的快速打包和生产环境部署。
 
-mvn clean package -DskipTests
+依赖包和 嗖包分别生成 
+mvn clean package -DskipTests      
+
+生成嗖包 并拷贝
+mvn jar:jar antrun:run
+
 
 pom.xml指定了 <mainClass>com.ChatPublishExample</mainClass>
 java -jar target/
