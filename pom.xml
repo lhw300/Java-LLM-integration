@@ -119,12 +119,13 @@
             <version>${djl.version}</version>
         </dependency>
 
-
+        <!--
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.4.12</version>
         </dependency>
+        -->
         <!--
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
@@ -194,6 +195,26 @@
             <groupId>com.fasterxml.woodstox</groupId>
             <artifactId>woodstox-core</artifactId>
             <version>6.6.2</version>
+        </dependency>
+        <!-- nop 吞掉第三方日志
+         <scope>provided</scope>
+        -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>1.7.36</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.20.0</version>
+
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.20.0</version>
+
         </dependency>
 
     </dependencies>

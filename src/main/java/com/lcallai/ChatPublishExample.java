@@ -1,6 +1,7 @@
 
 	package com.lcallai;
-
+    import org.apache.logging.log4j.LogManager;
+    import org.apache.logging.log4j.Logger;
 
     import com.lcallai.ChatAnswer;
     import com.lcallai.ChatSession;
@@ -8,14 +9,16 @@
     import com.lcallai.SessionManager;
 
     public class ChatPublishExample {
+        private static final Logger logger = LogManager.getLogger(ChatPublishExample.class);
+
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
 
-
-            System.out.println("🔥 进程内验证 QWEN_API_KEY: [" + System.getenv("QWEN_API_KEY") + "]");
+            logger.info("Rerank 模块加载成功！");
+            logger.debug("🔥 进程内验证 QWEN_API_KEY: [" + System.getenv("QWEN_API_KEY") + "]");
             // 1. 设置默认路径
             String configPath = "e:\\ai";
-
+            if(1==1 ) System.exit(0);
 
             // 2. 检查命令行是否传入了参数
             if (args.length > 0) {
@@ -37,8 +40,8 @@
              * 3. 负向约束比对 (Constraint Comparison)：识别 iOS 12 不符合 iOS 13 的硬性要求。
              */
             String[] scenarioCorrect = {
-                    "我是老师，请问那个云教案是什么东西？",              // 验证：业务定义，回答“以教案为单位...的备课功能”
-                    "我想在苹果手机上装‘翔云 2.0’，iOS 12 够用吗？", // 验证：版本纠错为 3.0，并根据知识库拦截 iOS 12
+                    "我是老师，请问那个教师云盘是什么东西？",              // 验证：实体纠错：将“教师云盘”自动映射为“云教案”
+                    "那个备课云盘里面都能放些什么资源？",                 // 验证：实体纠错：将“备课云盘”消解并映射为“云教案”。
                     "那在 Windows 10 电脑上能装吗？"                 // 验证：环境切换，匹配“Windows 7 或以上”要求
             };
 
@@ -82,7 +85,8 @@
                     "我是学生，我也想参加那个市级培训。",               // 验证：权限拦截（知识库中培训仅限教师/管理员）
                     "苹果手机系统版本低了会报错吗？",                   // 验证：语义恢复，匹配 iOS 13 约束说明
                     "平台支持在 Mac 电脑上用吗？",                    // 验证：边界拦截，知识库未提及 Mac
-                    "安卓手机版本太低会有影响吗？"                     // 验证：语义恢复，匹配“安卓 6.0+”说明
+                    "安卓手机版本太低会有影响吗？"  ,                   // 验证：语义恢复，匹配“安卓 6.0+”说明
+                    "老师参加培训呢?"                                 //验证身份切换
             };
             /* *************************************************************************
              * RAG 测试用例结束
@@ -98,7 +102,7 @@
 
             // 汇总所有场景进行回归测试
             String[][] allScenarios = {scenarioCorrect, scenarioInherit, scenarioRelation, scenarioBoundary};
-               allScenarios = new String[][] { scenarioCorrect };
+               allScenarios = new String[][] { scenarioBoundary };
 
 
             String[] scenarioNamescn = {"场景 1：实体纠错", "场景 2：隐式继承", "场景 3：指代消解", "场景 4：负项边界"};

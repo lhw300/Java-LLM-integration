@@ -201,6 +201,66 @@ public class ChatIntentExample {
                 {"你好", "GREETING"},             // 首句，此时 AI 没说过话
                 {"你说什么", "COMMAND"},          // 非首句，AI 已有回复，应判 REPLAY
         };
+
+        //场景一：极限“歪楼”与强行拉回（测试 CHITCHAT 的控制力）
+        //设计目的：测试用户在问业务的中途，突然开始疯狂闲聊，测试系统能否在不遗忘上下文（李老师）的前提下，既幽默应对，又把话题强行拽回粤教翔云的业务上
+        String[][] stressData5 = {
+                // 1. 开场与身份
+                {"你好", "GREETING"},
+                {"我是李老师", "INFORM"},
+
+                // 2. 突然开始闲聊 (测试 ChitchatHandler 的边界)
+                {"你觉得今天天气怎么样？适合备课吗？", "CHITCHAT"},
+
+                // 3. 极度歪楼
+                {"你平时都吃什么牌子的电量？", "CHITCHAT"},
+
+                // 4. 强行拉回业务
+                {"算了不扯了，老师的初始密码是多少来着？", "QUERY"}
+                // 预期：QUERY。系统应重写为“教师初始密码是多少”，并结合上下文“李老师”给出 A202101b 的答案。
+        };
+        //场景二：情绪爆发与抚慰后转人工（测试反馈与指令优先级）
+//设计目的：测试用户在使用过程中遇到困难，产生极大的负面情绪（Negative Sentiment），并在同一句话中夹杂了投诉和转人工。测试系统是优先安抚，还是优先执行动作。
+
+        String[][] stressData6 = {
+                // 1. 正常业务开场
+                {"你好，我是李老师", "GREETING"}, // 这里 GREETING 或 INFORM 均可
+                {"我想查一下怎么重置密码", "QUERY"},
+
+                // 2. 用户操作失败，情绪爆发 (复合意图：负面反馈 + 挂断/转人工指令)
+                {"你们这系统太垃圾了，密码根本不对，快给我找个活人！", "COMMAND"}
+                // 预期：COMMAND。虽然有强烈的 FEEDBACK (Negative)，但“找个活人”触发了 ACTION_TRANSFER，指令动作的优先级最高！
+        };
+        //场景三：指代消解与口语重播（测试 REPLAY 边界）
+       // 设计目的：在电话或者语音交互中，用户经常会因为环境嘈杂听不清。本例测试极简口语（如 "啊？"、"什么"）在有上下文和没有上下文时的不同判定。
+        String[][] stressData7 = {
+                // 1. 正常开场
+                {"你好，我是李老师，请问怎么重置密码？", "QUERY"},
+                // 此时 AI 会回复一大堆关于密码的 TTS 语音
+
+                // 2. 极简口语触发重播
+                {"什么？", "COMMAND"},
+                // 预期：COMMAND (ACTION_REPLAY)。因为 AI 刚说完话，用户说“什么？”代表没听清，应触发重新播放。
+
+                // 3. 再次询问
+                {"没听清，你再说一遍", "COMMAND"}
+                // 预期：COMMAND (ACTION_REPLAY)。语义泛化的重播请求。
+        };
+       // 场景四：多身份混淆与防呆设计（测试身份隔离）
+       // 设计目的：根据你代码里的系统提示词（System Prompt），系统严禁跨角色取值。如果用户一会儿说是老师，一会儿问学生的事，测试系统能不能做到“防呆”和“身份锁定”。
+        String[][] stressData8 = {
+                // 1. 锁定身份为老师
+                {"你好，我是老师", "INFORM"},
+
+                // 2. 询问本属于老师的业务
+                {"怎么重置密码？", "QUERY"}, // 预期：给出教师的 A202101b
+
+                // 3. 突然跨角色询问学生业务
+                {"那我们班学生的初始密码是多少？", "QUERY"}
+                // 预期：QUERY。系统应重写为“学生初始密码是多少”。
+                // 根据你的背景知识隔离原则，系统应该能查到并给出学生初始密码（大写A202101小写b），或者提示李老师这是学生业务。
+        };
+
         System.out.println("=== 自动化意图分发测试 (基于 SessionManager 内置注册) ===\n");
         String configPath = "e:\\ai";
 
@@ -210,7 +270,7 @@ public class ChatIntentExample {
        // SessionManager.warmUp();
         // 3. 执行集成测试
        // runIntegratedTest(stressData4, sessionManager);
-        runIntegratedTest(stressData2);
+        runIntegratedTest(stressData8);
         System.out.println("所有自动化链路测试完毕。");
     }
 
