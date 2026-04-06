@@ -21,6 +21,8 @@ import org.apache.lucene.store.FSDirectory;
 import java.io.File;
 import java.nio.file.*;
 import java.util.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 //excel import org.apache.poi.ss.usermodel.*;
 /**
@@ -31,6 +33,7 @@ import java.util.*;
  * - XLSX: A列(分类), B列(摘要), C列(内容)
  */
 public class IngestionService {
+    private static final Logger logger = LogManager.getLogger(IngestionService.class);
     private static final String DB_URL = "jdbc:postgresql://localhost:5432/postgres";
     private static final String DB_USER = "postgres";
     private static final String DB_PASS = "call";
@@ -67,7 +70,7 @@ public class IngestionService {
         String dbPass = AiConfig.getStringConfig("db.pass", "call");
 
         //aiType = "hybrid"; // 修改为 hybrid
-        System.out.println("🚀 启动知识库导入流水线...storageType "+storageType+" filePath "+filePath);
+        logger.debug("🚀 启动知识库导入流水线...storageType "+storageType+" filePath "+filePath);
         String tableName;
         // 1. 初始化客户端
         EmbeddingClient embedClient  ;
@@ -85,7 +88,7 @@ public class IngestionService {
             // 自动根据维度匹配表名，防止 768/1024 混淆
             tableName = "enterprise_knowledge_" + (embedClient.getDimension() == 768 ? "768" : "qwen_1024");
         }
-        System.out.println("🚀 模式: " + storageType + " | 维度: " + embedClient.getDimension());
+        logger.debug("🚀 模式: " + storageType + " | 维度: " + embedClient.getDimension());
 
 
 
@@ -122,8 +125,8 @@ public class IngestionService {
         }
         */
 
-      //  System.out.println("🗄️ 目标数据库表: " + tableName);
-        System.out.println("📂 正在解析文件: " + filePath);
+      //  logger.debug("🗄️ 目标数据库表: " + tableName);
+        logger.debug("📂 正在解析文件: " + filePath);
 
         // 🌟 2. 根据后缀名选择读取办法
         List<KnowledgeEntry> entries = new ArrayList<>();
@@ -132,7 +135,7 @@ public class IngestionService {
         } else if (filePath.toLowerCase().endsWith(".txt")) {
             entries = readFromTxt(filePath);
         } else {
-            System.err.println("❌ 不支持的文件格式，仅限 .txt 或 .xlsx");
+            logger.error("❌ 不支持的文件格式，仅限 .txt 或 .xlsx");
             return;
         }
         // 1. 在循环外统一初始化 Lucene Writer (如果需要)
@@ -155,7 +158,7 @@ public class IngestionService {
             String content     = entry.content != null ? entry.content.trim() : "";
 
             if (content.isEmpty()) {
-                System.out.println("⚠️ 第 " + (i + 1) + " 条记录内容为空，已跳过");
+                logger.debug("⚠️ 第 " + (i + 1) + " 条记录内容为空，已跳过");
                 continue;
             }
 
@@ -163,12 +166,12 @@ public class IngestionService {
             String summary  = rawSummary.length() > 255 ? rawSummary.substring(0, 255) : rawSummary;
 
             // 🌟 调试打印区：在 embed 之前确认数据读取是否正常
-            System.out.println("--------------------------------------------------");
-            System.out.println("🔍 正在处理第 " + (i + 1) + " 条数据:");
-            System.out.println("   [分类]: " + category);
-            System.out.println("   [摘要]: " + summary);
-            System.out.println("   [内容长度]: " + content.length() + " 字");
-            System.out.println("   [内容 ]: " + content );
+            logger.debug("--------------------------------------------------");
+            logger.debug("🔍 正在处理第 " + (i + 1) + " 条数据:");
+            logger.debug("   [分类]: " + category);
+            logger.debug("   [摘要]: " + summary);
+            logger.debug("   [内容长度]: " + content.length() + " 字");
+            logger.debug("   [内容 ]: " + content );
             try {
                 // ✅ 向量化：合并三个字段以增强检索语义
                 // 修改 IngestionService.java 中的这一行
@@ -198,10 +201,10 @@ public class IngestionService {
                     luceneWriter.addDocument(doc);
 
                     if(successCount%20==0){
-                        System.out.println("✅ 正在提交索引...");
+                        logger.debug("✅ 正在提交索引...");
                         luceneWriter.commit(); // 🌟 必须手动提交，否则 searchLucene 找不到索引
 
-                        System.out.println("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
+                        logger.debug("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
                     }
 
                 } else {
@@ -210,22 +213,22 @@ public class IngestionService {
                 }
 
 
-                System.out.println("   ✅ ID [" + entry.id + "] 处理成功 (Insert/Update)");
+                logger.debug("   ✅ ID [" + entry.id + "] 处理成功 (Insert/Update)");
                 successCount++;
             } catch (Exception e) {
-                System.err.println("   ❌ ID [" + entry.id + "] 失败: " + e.getMessage());
+                logger.error("   ❌ ID [" + entry.id + "] 失败: " + e.getMessage());
             }
         }
 
-        System.out.println("✨ 导入完成！共成功处理 " + successCount + " 条知识。");
+        logger.debug("✨ 导入完成！共成功处理 " + successCount + " 条知识。");
         // 在 IngestionService.java 的 main 方法末尾
 // ... 循环处理完 10 条数据后
         if ("lucene".equalsIgnoreCase(storageType)) {
-            System.out.println("✅ 正在提交索引...");
+            logger.debug("✅ 正在提交索引...");
             luceneWriter.commit(); // 🌟 必须手动提交，否则 searchLucene 找不到索引
             luceneWriter.close();  // 🌟 关闭时也会自动提交
         }
-        System.out.println("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
+        logger.debug("? 导入完成！共成功处理 " + entries.size() + " 条知识。");
 
 
         CLIENT.dispatcher().executorService().shutdown();
@@ -358,7 +361,7 @@ public class IngestionService {
                         parts[3].trim()  // 内容
                 ));
             } else {
-                System.out.println("⚠️ 跳过格式错误的行: " + trimmed);
+                logger.debug("⚠️ 跳过格式错误的行: " + trimmed);
             }
         }
         return list;
@@ -481,11 +484,11 @@ public class IngestionService {
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
              java.sql.Statement stmt = conn.createStatement()) {
 
-            System.out.println("⚠️ 正在全量清理数据库表: " + tableName + "...");
+            logger.debug("⚠️ 正在全量清理数据库表: " + tableName + "...");
             stmt.execute(sql);
-            System.out.println("✅ 清理完成。");
+            logger.debug("✅ 清理完成。");
         } catch (Exception e) {
-            System.err.println("❌ 清理失败: " + e.getMessage());
+            logger.error("❌ 清理失败: " + e.getMessage());
             throw e;
         }
     }
@@ -505,7 +508,7 @@ public class IngestionService {
         Path path = Paths.get(pathStr);
         if (Files.exists(path)) {
             Files.walk(path).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-            System.out.println("⚠️ 已物理清空 Lucene 目录");
+            logger.debug("⚠️ 已物理清空 Lucene 目录");
         }
     }
 

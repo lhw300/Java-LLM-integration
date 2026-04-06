@@ -1,5 +1,8 @@
 package com.lcallai.intent;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ChatSession.java 改造说明
 // 本文件展示需要在 ChatSession 中增加/修改的部分，不是完整的 ChatSession 类。
@@ -52,7 +55,7 @@ package com.lcallai.intent;
  *
  *       // 意图分类（调用轻量 LLM，通常 < 500ms）
  *       IntentResult result = intentClassifier.classify(text, queryHistory);
- *       System.out.println("[ask] " + result);
+ *       logger.debug("[ask] " + result);
  *
  *       // 按 intent 派发到对应 Handler
  *       return intentDispatcher.dispatch(text, result, this);
@@ -115,5 +118,6 @@ package com.lcallai.intent;
  *   import com.lcallai.intent.IntentResult;
  */
 public class ChatSessionPatch {
+    private static final Logger logger = LogManager.getLogger(ChatSessionPatch.class);
     // 此类仅作说明用途，不需要编译
 }

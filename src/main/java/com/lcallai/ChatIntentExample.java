@@ -4,16 +4,19 @@ import java.util.UUID;
 import java.util.List;
 import java.util.ArrayList;
 import com.lcallai.intent.*;
-
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import com.lcallai.handler.*;
 /**
  * AI Agent 意图识别全场景装配测试
  import java.util.UUID;
 
 
+
  * 精简版测试用例：直接利用 SessionManager 内部已注册的逻辑
  */
 public class ChatIntentExample {
+      static final Logger logger = LogManager.getLogger(ChatIntentExample.class);
 
     public static void main(String[] args) {
         // 1. 初始化 SessionManager
@@ -261,7 +264,7 @@ public class ChatIntentExample {
                 // 根据你的背景知识隔离原则，系统应该能查到并给出学生初始密码（大写A202101小写b），或者提示李老师这是学生业务。
         };
 
-        System.out.println("=== 自动化意图分发测试 (基于 SessionManager 内置注册) ===\n");
+        logger.debug("=== 自动化意图分发测试 (基于 SessionManager 内置注册) ===\n");
         String configPath = "e:\\ai";
 
 
@@ -271,7 +274,7 @@ public class ChatIntentExample {
         // 3. 执行集成测试
        // runIntegratedTest(stressData4, sessionManager);
         runIntegratedTest(stressData8);
-        System.out.println("所有自动化链路测试完毕。");
+        logger.debug("所有自动化链路测试完毕。");
     }
 
     private static void runIntegratedTest(String[][] testData) {
@@ -282,8 +285,8 @@ public class ChatIntentExample {
             String userInput = test[0];
             String expectedIntent = test[1];
 
-            System.out.println("==================================================");
-            System.out.println("👤 用户输入: " + userInput + " | 预期意图: " + expectedIntent);
+            logger.debug("==================================================");
+            logger.debug("👤 用户输入: " + userInput + " | 预期意图: " + expectedIntent);
 
             // 直接调用 ask()，分类+派发全部内聚在里面
             ChatAnswer ca = session.ask(userInput);
@@ -294,23 +297,23 @@ public class ChatIntentExample {
                 String actual = result.intent.name();
                 boolean pass = actual.equalsIgnoreCase(expectedIntent);
 
-                System.out.printf("[%s] 识别意图: %-10s | 预期意图: %s%n",
-                        pass ? "PASS" : "FAIL", actual, expectedIntent);
+                logger.debug(String.format("[%s] 识别意图: %-10s | 预期意图: %s",
+                        pass ? "PASS" : "FAIL", actual, expectedIntent));
 
                 if (result.refinedQuery != null && !result.refinedQuery.isEmpty())
-                    System.out.println("     └─ [优化查询]: " + result.refinedQuery);
+                    logger.debug("     └─ [优化查询]: " + result.refinedQuery);
                 if (result.subIntent != null)
-                    System.out.println("     └─ [子意图]: " + result.subIntent);
+                    logger.debug("     └─ [子意图]: " + result.subIntent);
                 if (result.actionCode != null)
-                    System.out.println("     └─ [动作码]: " + result.actionCode);
+                    logger.debug("     └─ [动作码]: " + result.actionCode);
                 if (result.sentiment != IntentResult.Sentiment.NEUTRAL)
-                    System.out.println("     └─ [情绪极性]: " + result.sentiment);
+                    logger.debug("     └─ [情绪极性]: " + result.sentiment);
             }
 
-            System.out.println("     └─ [状态码]: " + ca.code);
-            System.out.println("     └─ [Action]: " + ca.action);
-            System.out.println("     └─ [AI回复]: " + ca.answer);
-            System.out.println("--------------------------------------------------");
+            logger.debug("     └─ [状态码]: " + ca.code);
+            logger.debug("     └─ [Action]: " + ca.action);
+            logger.debug("     └─ [AI回复]: " + ca.answer);
+            logger.debug("--------------------------------------------------");
         }
     }
     private static void displayTestLog(String input, IntentResult intentRes, ChatAnswer answer, String expected) {
@@ -318,34 +321,34 @@ public class ChatIntentExample {
         String actual = intentRes.intent.name();
         boolean success = actual.equalsIgnoreCase(expected);
 
-       // System.out.println("--------------------------------------------------");
-        System.out.printf("[%s] 用户输入: %s%n", success ? "PASS" : "FAIL", input);
-        System.out.printf("     识别意图: %-10s | 预期意图: %s%n", actual, expected);
+       // logger.debug("--------------------------------------------------");
+        logger.debug(String.format("[%s] 用户输入: %s", success ? "PASS" : "FAIL", input));
+        logger.debug(String.format("     识别意图: %-10s | 预期意图: %s", actual, expected));
 
         // 2. 打印协议细节 (直接访问你 IntentResult 里的 public final 字段)
         if (intentRes.refinedQuery != null && !intentRes.refinedQuery.isEmpty()) {
-            System.out.println("     └─ [优化查询]: " + intentRes.refinedQuery);
+            logger.debug("     └─ [优化查询]: " + intentRes.refinedQuery);
         }
 
         if (intentRes.subIntent != null) {
-            System.out.println("     └─ [子意图]: " + intentRes.subIntent);
+            logger.debug("     └─ [子意图]: " + intentRes.subIntent);
         }
 
         if (intentRes.actionCode != null) {
-            System.out.println("     └─ [动作码]: " + intentRes.actionCode);
+            logger.debug("     └─ [动作码]: " + intentRes.actionCode);
         }
 
         // 情绪是枚举，直接打印或转换
         if (intentRes.sentiment != IntentResult.Sentiment.NEUTRAL) {
-            System.out.println("     └─ [情绪极性]: " + intentRes.sentiment);
+            logger.debug("     └─ [情绪极性]: " + intentRes.sentiment);
         }
 
         // 3. 处理结果 (适配你的 ChatAnswer 类)
         if (answer != null) {
-            System.out.println("     └─ 状态码: " + answer.code);
+            logger.debug("     └─ 状态码: " + answer.code);
             // 注意：你代码里字段叫 answer，不是 result 或 reply
-            System.out.println("     └─ AI回复: " + answer.answer);
+            logger.debug("     └─ AI回复: " + answer.answer);
         }
-        System.out.println("--------------------------------------------------");
+        logger.debug("--------------------------------------------------");
     }
 }

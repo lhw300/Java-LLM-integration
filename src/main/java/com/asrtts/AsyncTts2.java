@@ -8,11 +8,14 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 集成了并发压测逻辑的 TTS 客户端
  */
 public class AsyncTts2 {
+    private static final Logger logger = LogManager.getLogger(AsyncTts2.class);
 
     private WebSocket webSocket;
     private final OkHttpClient client;
@@ -44,7 +47,7 @@ public class AsyncTts2 {
             this.fos = new FileOutputStream(filePath);
             this.fos.write(new byte[44]); // 预留 WAV 头
         } catch (IOException e) {
-            System.err.println("文件初始化失败: " + e.getMessage());
+            logger.error("文件初始化失败: " + e.getMessage());
         }
 
         // 这里的 sid=6, samplerate=8000 必须和你的 Python 后端配置一致
@@ -72,7 +75,7 @@ public class AsyncTts2 {
             @Override
             public void onMessage(WebSocket webSocket, String text) {
                 // 打印收到的原始信号
-                System.out.println("<<< 收到服务端信号: " + text);
+                logger.debug("<<< 收到服务端信号: " + text);
 
                 // ★ 修改点：根据你提供的日志，后端使用 progress:1.0 来表示任务合成结束
                 if (text.contains("\"progress\":1.0") || text.contains("\"progress\": 1.0")) {
@@ -89,7 +92,7 @@ public class AsyncTts2 {
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                System.err.println("!!! 连接异常: " + t.getMessage());
+                logger.error("!!! 连接异常: " + t.getMessage());
                 completeTask("连接失败");
             }
 
@@ -100,7 +103,7 @@ public class AsyncTts2 {
                         writeWavHeader(fos, totalDataSize);
                         fos.close();
                         fos = null;
-                        System.out.println(">>> 任务状态: " + reason + " | 文件保存成功");
+                        logger.debug(">>> 任务状态: " + reason + " | 文件保存成功");
                     }
                 } catch (IOException ignored) {}
 
@@ -170,7 +173,7 @@ public class AsyncTts2 {
         CountDownLatch latch = new CountDownLatch(TASK_COUNT);
         long start = System.currentTimeMillis();
 
-        System.out.println("--- 压测启动，并发数: " + TASK_COUNT + " ---");
+        logger.debug("--- 压测启动，并发数: " + TASK_COUNT + " ---");
 
         for (int i = 0; i < TASK_COUNT; i++) {
             final int index = i;
@@ -186,7 +189,7 @@ public class AsyncTts2 {
             // 预留握手时间，避免请求重叠
             Thread.sleep(300);
 
-            System.out.println(">>> 发送任务 [" + index + "]");
+            logger.debug(">>> 发送任务 [" + index + "]");
             tts.sendText(TEXT);
         }
 
@@ -195,11 +198,11 @@ public class AsyncTts2 {
         long end = System.currentTimeMillis();
 
         if (finished) {
-            System.out.println("\nSUCCESS: 所有任务已成功返回信号！");
-            System.out.println("总耗时: " + (end - start) + " ms");
-            System.out.println("平均响应: " + ((end - start) / TASK_COUNT) + " ms/路");
+            logger.debug("\nSUCCESS: 所有任务已成功返回信号！");
+            logger.debug("总耗时: " + (end - start) + " ms");
+            logger.debug("平均响应: " + ((end - start) / TASK_COUNT) + " ms/路");
         } else {
-            System.err.println("\nERROR: 任务超时！请根据控制台打印的 '收到服务端信号' 排查原因。");
+            logger.error("\nERROR: 任务超时！请根据控制台打印的 '收到服务端信号' 排查原因。");
         }
 
         System.exit(0);

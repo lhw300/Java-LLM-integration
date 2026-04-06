@@ -5,6 +5,8 @@ import com.lcallai.ChatSession;
 
 import java.util.EnumMap;
 import java.util.Map;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 意图派发器（注册表模式）
@@ -25,6 +27,7 @@ import java.util.Map;
  * </pre>
  */
 public class IntentDispatcher {
+    private static final Logger logger = LogManager.getLogger(IntentDispatcher.class);
 
     private final Map<IntentResult.Intent, IntentHandler> handlers =
             new EnumMap<>(IntentResult.Intent.class);
@@ -54,7 +57,7 @@ public class IntentDispatcher {
 
         if (handler == null) {
             // 未注册的 intent 降级为 QUERY，防止系统报错
-            System.err.println("[IntentDispatcher] 未注册的 intent: " + result.intent + "，降级为 QUERY");
+            logger.error("[IntentDispatcher] 未注册的 intent: " + result.intent + "，降级为 QUERY");
             handler = handlers.get(IntentResult.Intent.QUERY);
         }
 

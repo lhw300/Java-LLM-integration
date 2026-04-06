@@ -12,8 +12,11 @@ import com.lcallai.AiConfig;
 import com.lcallai.EmbeddingClient;
 import com.lcallai.LlmClient;
 import com.lcallai.RerankerTranslator;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class DJLLocalClient implements EmbeddingClient, LlmClient {
+    private static final Logger logger = LogManager.getLogger(DJLLocalClient.class);
     private static ZooModel<String, float[]> model;
     private ZooModel<String[], Float> rerankModel; // 专门用于 Cross-Encoder 的模型
     //private Predictor<String[], Float> rerankPredictor;
@@ -43,7 +46,7 @@ public class DJLLocalClient implements EmbeddingClient, LlmClient {
     static {
         // 1. 自动初始化检查：如果 configPath 为空，根据 OS 自动兜底初始化
         if (AiConfig.configPath == null) {
-            System.out.println("⚠️ 检测到 AiConfig 尚未初始化，执行本地测试模式兜底初始化...");
+            logger.debug("⚠️ 检测到 AiConfig 尚未初始化，执行本地测试模式兜底初始化...");
             String os = System.getProperty("os.name").toLowerCase();
             // 🌟 确保默认路径是干净的
             String defaultPath = os.contains("win") ? "E:\\AI" : "/home/call/ai";
@@ -104,9 +107,9 @@ public class DJLLocalClient implements EmbeddingClient, LlmClient {
 
 
 
-        System.out.println("✅ 跨平台全离线超级胖包配置完毕！OS: " + os);
+        logger.debug("✅ 跨平台全离线超级胖包配置完毕！OS: " + os);
 
-        System.out.println("✅ 已通过 AiConfig.configPath (" + basePath + ") 自动拼装所有本地模型路径！");
+        logger.debug("✅ 已通过 AiConfig.configPath (" + basePath + ") 自动拼装所有本地模型路径！");
     }
 
 // 1. 指定原生 PyTorch 核心库路径
@@ -127,12 +130,12 @@ static {
 
         System.setProperty("offline", "true");
 
-    System.out.println("✅ 已锁定本地路径并开启离线模式");
+    logger.debug("✅ 已锁定本地路径并开启离线模式");
 } */
 
     public DJLLocalClient() throws Exception {
-
-        if (model == null) {
+        try {
+            if (model == null) {
             /*
             检测 (Detection)：它发现你需要 PyTorch 引擎，但本地或远程只有 .bin。
 
@@ -149,33 +152,37 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
                     .build();
 
             */
-            // 正确写法：
-            // String path = "E:/EIT/openai/text2vec-base-chinese-pt";
-            //  path=EMBED_MODEL_PATH;
-            // path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embedding/ai/djl/huggingface/pytorch/shibing624/text2vec-base-chinese/0.0.1/text2vec-base-chinese";
-            // path = "E:/EIT/openai/text2vec-base-chinese-pt";
-            // System.out.println("当前加载目录: " + Paths.get("E:\\EIT\\openai\\text2vec-base-chinese-pt").toAbsolutePath());
+                // 正确写法：
+                // String path = "E:/EIT/openai/text2vec-base-chinese-pt";
+                //  path=EMBED_MODEL_PATH;
+                // path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embedding/ai/djl/huggingface/pytorch/shibing624/text2vec-base-chinese/0.0.1/text2vec-base-chinese";
+                // path = "E:/EIT/openai/text2vec-base-chinese-pt";
+                // logger.debug("当前加载目录: " + Paths.get("E:\\EIT\\openai\\text2vec-base-chinese-pt").toAbsolutePath());
 
-            // 🌟 核心修复：使用 Paths.get 自动处理 URI，不要手动拼 "file:/"
-            String embedUri = Paths.get(embedModelPath).toUri().toString();
+                // 🌟 核心修复：使用 Paths.get 自动处理 URI，不要手动拼 "file:/"
+                String embedUri = Paths.get(embedModelPath).toUri().toString();
 
-            Criteria<String, float[]> criteria = Criteria.builder()
-                    .setTypes(String.class, float[].class)
-                    // 注意：必须确保路径前面有 file:/
-                    .optModelUrls(embedUri) // 👈 Paths 转换后会自动带上正确的协议头
-                    .optEngine("PyTorch")
-                    // 🌟 核心修复 1: 显式告诉 DJL 权重文件叫 pytorch_model
-                    // 注意：不要加 .bin 或 .pt 后缀，DJL 会自动根据引擎寻找
-                    //.optOption("modelName", "pytorch_model")
-                    // 🌟 核心修复 2: 显式指定 Translator，不要只靠 Factory 自动推断
-                    .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
-                    .build();
-
-
-            model = criteria.loadModel();
+                Criteria<String, float[]> criteria = Criteria.builder()
+                        .setTypes(String.class, float[].class)
+                        // 注意：必须确保路径前面有 file:/
+                        .optModelUrls(embedUri) // 👈 Paths 转换后会自动带上正确的协议头
+                        .optEngine("PyTorch")
+                        // 🌟 核心修复 1: 显式告诉 DJL 权重文件叫 pytorch_model
+                        // 注意：不要加 .bin 或 .pt 后缀，DJL 会自动根据引擎寻找
+                        //.optOption("modelName", "pytorch_model")
+                        // 🌟 核心修复 2: 显式指定 Translator，不要只靠 Factory 自动推断
+                        .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
+                        .build();
 
 
-            initRerankModel(rerankModelPath);
+                model = criteria.loadModel();
+
+
+                initRerankModel(rerankModelPath);
+            }
+        }catch (Exception e){
+            logger.error("DJLLocalClient "+e);
+
         }
         // 🌟 2. 执行预热 (Warmup)
         // warmup(3); // 生产环境建议连续预热 3-5 次
@@ -197,7 +204,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
                 .build();
 
         this.rerankModel = criteria.loadModel();
-        System.out.println("✅ Rerank 本地 TorchScript 模型彻底加载成功！");
+        logger.debug("✅ Rerank 本地 TorchScript 模型彻底加载成功！");
     }
 
     private void initRerankModel3(String modelPath) throws Exception {
@@ -214,14 +221,14 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
         // 这里调用 loadModel() 会直接返回 ZooModel<String[], Float>，不会触发类型转换错误
         this.rerankModel = criteria.loadModel();
 
-        System.out.println("✅ ZooModel 加载成功！");
+        logger.debug("✅ ZooModel 加载成功！");
     }
     public String chat(ArrayNode messages) throws Exception {
-        System.out.println("🔥 如果这里运行，就出错！！！");
+        logger.debug("🔥 如果这里运行，就出错！！！");
         return null;
     }
     public String generate(String query, String document) throws Exception {
-        System.out.println("🔥 如果这里运行，就出错！！！");
+        logger.debug("🔥 如果这里运行，就出错！！！");
         return null;
     }
     @Override
@@ -281,30 +288,30 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             if (args.length > 0) {
                 // 如果命令行传了路径（比如 /home/call/ai），手动塞给 AiConfig
                 AiConfig.configPath = args[0].replace("\\", "/");
-                System.out.println("⏳ 正在初始化本地 configPath="+AiConfig.configPath);
+                logger.debug("⏳ 正在初始化本地 configPath="+AiConfig.configPath);
                 AiConfig.init(args[0]);
             }
 
-            System.out.println("⏳ 正在初始化本地 DJL Rerank 引擎..."+rerankModelPath);
+            logger.debug("⏳ 正在初始化本地 DJL Rerank 引擎..."+rerankModelPath);
             long initStart = System.currentTimeMillis();
             DJLLocalClient client = new DJLLocalClient();
-            System.out.println("✅ 初始化完成！总耗时: " + (System.currentTimeMillis() - initStart) + " ms\n");
+            logger.debug("✅ 初始化完成！总耗时: " + (System.currentTimeMillis() - initStart) + " ms\n");
 
             // 预热 (消除冷启动差异)
-            System.out.println("🔥 正在进行预热...");
+            logger.debug("🔥 正在进行预热...");
             for (int i = 0; i < 3; i++) {
                 client.rerank("预热", "预热");
             }
-            System.out.println("✅ 预热完成！\n");
+            logger.debug("✅ 预热完成！\n");
 
 
 
             // ==========================================
 // 🚨 终极证明：为什么 Rerank 是不可或缺的？
 // ==========================================
-            System.out.println("==================================================");
-            System.out.println("🚨 终极证明：Embedding 的“盲点”与 Rerank 的“降维打击”");
-            System.out.println("测试原理：构造一个【字面高度重合但主体错误】的陷阱，和一个【字面毫无重合但语义正确】的答案。");
+            logger.debug("==================================================");
+            logger.debug("🚨 终极证明：Embedding 的“盲点”与 Rerank 的“降维打击”");
+            logger.debug("测试原理：构造一个【字面高度重合但主体错误】的陷阱，和一个【字面毫无重合但语义正确】的答案。");
 
 // 用户真实口语化提问
             String ultimateQuery = "我是学生，密码忘了怎么找回？";
@@ -317,27 +324,27 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
 // (Embedding 找不到相似关键字，会给极差的分数；但 Rerank 能读懂它)
             String correctDoc = "【适用对象：学生】若遇到口令遗失无法登录的情况，请联系您的班主任处理。";
 
-            System.out.printf("\n【用户问题】: %s\n", ultimateQuery);
-            System.out.println("--------------------------------------------------");
+            logger.debug(String.format("\n【用户问题】: %s", ultimateQuery));
+            logger.debug("--------------------------------------------------");
 
 // 1. 测试 Embedding (盲婚哑嫁模式)
             double[] vQuery = client.embed(ultimateQuery);
             double[] vTrap = client.embed(trapDoc);
             double[] vCorrect = client.embed(correctDoc);
 
-            System.out.println("🧪 第一回合：单纯依靠 Embedding 向量检索 (看距离，越小越好)");
+            logger.debug("🧪 第一回合：单纯依靠 Embedding 向量检索 (看距离，越小越好)");
             printDistance("陷阱文档 (字面重合，主体错)", ultimateQuery, trapDoc, vQuery, vTrap);
             printDistance("正确文档 (字面不同，主体对)", ultimateQuery, correctDoc, vQuery, vCorrect);
 // 预期结果：陷阱文档的距离会远小于正确文档。如果没 Rerank，正确的文档直接被淘汰！
 
 // 2. 测试 Rerank (面对面相亲模式)
-            System.out.println("🎯 第二回合：Rerank 交叉精排打分 (看概率，越大越好，1.0为满分)");
+            logger.debug("🎯 第二回合：Rerank 交叉精排打分 (看概率，越大越好，1.0为满分)");
             double scoreTrap = client.rerank(ultimateQuery, trapDoc);
             double scoreCorrect = client.rerank(ultimateQuery, correctDoc);
 
-            System.out.printf("  👉 [陷阱文档] Rerank 最终打分: %.4f (无情识破陷阱！)\n", scoreTrap);
-            System.out.printf("  👉 [正确文档] Rerank 最终打分: %.4f (成功捞回正确答案！)\n", scoreCorrect);
-            System.out.println("==================================================\n");
+            logger.debug(String.format("  👉 [陷阱文档] Rerank 最终打分: %.4f (无情识破陷阱！)", scoreTrap));
+            logger.debug(String.format("  👉 [正确文档] Rerank 最终打分: %.4f (成功捞回正确答案！)", scoreCorrect));
+            logger.debug("==================================================\n");
 
 
 
@@ -345,24 +352,24 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             // ==========================================
             // 🚨 场景一：角色错位 (最经典的陷阱)
             // ==========================================
-            System.out.println("==================================================");
-            System.out.println("🚨 场景一：角色错位 (测试模型是否能精准识别主语)");
+            logger.debug("==================================================");
+            logger.debug("🚨 场景一：角色错位 (测试模型是否能精准识别主语)");
             String q1 = "学校管理员的初始密码是什么？";
             String q1_docA = "【适用对象：学校管理员】管理员账号是本校十位数的学校标识码，初始密码统一由所属教育局下发。"; // 正确
             String q1_docB = "【适用对象：教师】账号为个人身份证号码，初始密码为大写A202101小写b。"; // 陷阱：字面包含“初始密码”
             String q1_docC = "【适用对象：学生】个人账号是学生的个人身份证号码，初始密码是向大写A202101小写b。"; // 陷阱
 
-            System.out.printf("[用户问题]: %s\n", q1);
+            logger.debug(String.format("[用户问题]: %s", q1));
             printTimedRank(client, "正确-管理员", q1, q1_docA);
             printTimedRank(client, "陷阱-教师", q1, q1_docB);
             printTimedRank(client, "陷阱-学生", q1, q1_docC);
-            System.out.println();
+            logger.debug("");
 
             // ==========================================
             // 🚨 场景二：语义理解与口语化 (测试非关键字匹配)
             // ==========================================
-            System.out.println("==================================================");
-            System.out.println("🚨 场景二：口语化提问 (测试模型能否理解“孩子”=“学生”，“苹果”=“iOS”)");
+            logger.debug("==================================================");
+            logger.debug("🚨 场景二：口语化提问 (测试模型能否理解“孩子”=“学生”，“苹果”=“iOS”)");
             // String q2 = "苹果手机怎么装这个软件，孩子要用？"; // 导致docA分数很低
             // q2="学生版的APP对手机系统有什么要求？";
             // q2="学生电脑端要求Windows几才能运行？";
@@ -370,41 +377,41 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             String q2_docA = "【适用对象：学生】电脑客户端支持Windows 7或以上，安卓客户端支持安卓6.0版本或以上，苹果客户端支持iOS 13或以上的系统。"; // 正确
             String q2_docB = "【适用对象：教研员/教师】电脑客户端要求Windows 7或以上的操作系统。"; // 陷阱：教师无移动端
 
-            System.out.printf("[用户问题]: %s\n", q2);
+            logger.debug(String.format("[用户问题]: %s", q2));
             printTimedRank(client, "正确-学生多端", q2, q2_docA);
             printTimedRank(client, "陷阱-教师单端", q2, q2_docB);
-            System.out.println();
+            logger.debug("");
 
             // ==========================================
             // 🚨 场景三：条件分支嵌套 (逻辑迷宫)
             // ==========================================
-            System.out.println("==================================================");
-            System.out.println("🚨 场景三：条件迷宫 (测试模型能否处理前置条件)");
+            logger.debug("==================================================");
+            logger.debug("🚨 场景三：条件迷宫 (测试模型能否处理前置条件)");
             String q3 = "我是学生，手机没绑定，密码忘了怎么办？";
             String q3_docA = "【适用对象：学生】若没绑定手机号，需联系本班教师或学校管理员重置密码；若已绑定手机号，可通过登录页面点击“忘记密码”自助重置。"; // 正确
             String q3_docB = "【适用对象：教师】若忘记密码，可在登录页面点击“忘记密码”通过手机接收验证码重置。"; // 陷阱：教师默认用手机找回
 
-            System.out.printf("[用户问题]: %s\n", q3);
+            logger.debug(String.format("[用户问题]: %s", q3));
             printTimedRank(client, "正确-未绑定找老师", q3, q3_docA);
             printTimedRank(client, "陷阱-教师手机找回", q3, q3_docB);
-            System.out.println();
+            logger.debug("");
 
             // ==========================================
             // 🚨 场景四：克隆文本鉴别 (终极挑战)
             // ==========================================
-            System.out.println("==================================================");
-            System.out.println("🚨 场景四：克隆文本 (正文 100% 相同，只有开头对象不同)");
+            logger.debug("==================================================");
+            logger.debug("🚨 场景四：克隆文本 (正文 100% 相同，只有开头对象不同)");
             String q4 = "学校管理员的省/市区级培训在哪看？";
             String q4_docA = "【适用对象：学校管理员】请登录粤教翔云数字教材应用平台3.0客户端，点击“教研天地”，相关培训要求以当地教育部门发文为准。"; // 正确
             String q4_docB = "【适用对象：教研员/教师】请登录粤教翔云数字教材应用平台3.0客户端，点击“教研天地”，相关培训要求以当地教育部门发文为准。"; // 陷阱
 
-            System.out.printf("[用户问题]: %s\n", q4);
+            logger.debug(String.format("[用户问题]: %s", q4));
             printTimedRank(client, "正确-管理员", q4, q4_docA);
             printTimedRank(client, "陷阱-教师", q4, q4_docB);
-            System.out.println();
+            logger.debug("");
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
 
@@ -418,22 +425,22 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             long time = System.currentTimeMillis() - start;
 
             // %-14s 让标签左对齐，方便视觉对比；%3d 保证耗时位对齐
-            System.out.printf("  👉 [%-14s] ⏱️耗时: %3d ms | 🎯打分: %s\n", label, time, score);
+            logger.debug(String.format("  👉 [%-14s] 耗时: %3d ms | 🎯打分: %s", label, time, score));
         } catch (Exception e) {
-            System.out.printf("  👉 [%-14s] ❌ 评估失败: %s\n", label, e.getMessage());
+            logger.debug(String.format("  👉 [%-14s] ❌ 评估失败: %s", label, e.getMessage()));
         }
     }
     // --- 🚀 终极对比测试：证明 Rerank 价值的 Main 方法 ---
     public static void main生肉大法(String[] args) {
         try {
-            System.out.println("⏳ 正在初始化双擎模型DJLLocalClient (Embedding + Rerank)...");
+            logger.debug("⏳ 正在初始化双擎模型DJLLocalClient (Embedding + Rerank)...");
             DJLLocalClient client = new DJLLocalClient();
-            System.out.println("✅ 初始化完成！\n");
+            logger.debug("✅ 初始化完成！\n");
 
             // ==========================================
             // 0. 🔥 模型预热 (Warm-up)
             // ==========================================
-            System.out.println("🔥 正在进行模型预热 (消除冷启动延迟)...");
+            logger.debug("🔥 正在进行模型预热 (消除冷启动延迟)...");
             long warmupStart = System.currentTimeMillis();
             // 循环几次，让底层推理引擎（C++/CUDA）初始化完毕，并触发 Java JIT 编译
             for (int i = 0; i < 3; i++) {
@@ -441,7 +448,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
                 client.generate("预热问题", "预热文档内容");
             }
             long warmupTime = System.currentTimeMillis() - warmupStart;
-            System.out.println("✅ 预热完成！(预热阶段总耗时: " + warmupTime + " ms)\n");
+            logger.debug("✅ 预热完成！(预热阶段总耗时: " + warmupTime + " ms)\n");
 
             // ==========================================
             // 构造极端的“困难负样本”测试集
@@ -458,23 +465,23 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             // String docA_Correct = "教师的默认登录口令是大写A202101小写b。";
             // String docB_Trap = "学生的默认登录口令是身份证后六位。";
 
-            System.out.println("【用户提问】: " + query);
-            System.out.println("---------------------------------------------------------");
-            System.out.println("[文档 A - 语义正确但字面不同]: " + docA_Correct);
-            System.out.println("[文档 B - 语义错误但字面高度重合]: " + docB_Trap);
-            System.out.println("---------------------------------------------------------\n");
+            logger.debug("【用户提问】: " + query);
+            logger.debug("---------------------------------------------------------");
+            logger.debug("[文档 A - 语义正确但字面不同]: " + docA_Correct);
+            logger.debug("[文档 B - 语义错误但字面高度重合]: " + docB_Trap);
+            logger.debug("---------------------------------------------------------\n");
 
             // ==========================================
             // 1. 粗排测试：Embedding 向量检索测试
             // ==========================================
-            System.out.println("=== 🧪 阶段一：Embedding 向量检索测试 ===");
+            logger.debug("=== 🧪 阶段一：Embedding 向量检索测试 ===");
             long embedStart = System.currentTimeMillis();
             double[] vQuery = client.embed(query);
             double[] vDocA = client.embed(docA_Correct);
             double[] vDocB = client.embed(docB_Trap);
             long embedTime = System.currentTimeMillis() - embedStart;
 
-            System.out.printf("⏱️ Embedding 3条文本实际计算总耗时: %d ms (平均: %d ms/条)\n\n", embedTime, embedTime / 3);
+            logger.debug(String.format(" Embedding 3条文本实际计算总耗时: %d ms (平均: %d ms/条)\n", embedTime, embedTime / 3));
 
             // 使用你写好的距离打印法
             printDistance("正确答案 (字面不同)", query, docA_Correct, vQuery, vDocA);
@@ -484,7 +491,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             // ==========================================
             // 2. 精排测试：Rerank 交叉精排测试
             // ==========================================
-            System.out.println("=== 🎯 阶段二：Rerank 交叉精排测试 ===");
+            logger.debug("=== 🎯 阶段二：Rerank 交叉精排测试 ===");
             long rerankTotalStart = System.currentTimeMillis();
 
             long start = System.currentTimeMillis();
@@ -497,21 +504,21 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
 
             long rerankTotalTime = System.currentTimeMillis() - rerankTotalStart;
 
-            System.out.printf("[正确答案 - 耗时 %d ms] 👉 Rerank 打分/距离: %s\n", timeA, scoreA);
-            System.out.printf("[陷阱答案 - 耗时 %d ms] 👉 Rerank 打分/距离: %s\n", timeB, scoreB);
-            System.out.printf("⏱️ Rerank 2次比对实际计算总耗时: %d ms\n\n", rerankTotalTime);
+            logger.debug(String.format("[正确答案 - 耗时 %d ms] 👉 Rerank 打分/距离: %s", timeA, scoreA));
+            logger.debug(String.format("[陷阱答案 - 耗时 %d ms] 👉 Rerank 打分/距离: %s", timeB, scoreB));
+            logger.debug(String.format(" Rerank 2次比对实际计算总耗时: %d ms\n", rerankTotalTime));
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
     // --- 🚀 简单测试 Main 方法 ---
     public static void main21(String[] args) {
         try {
-            System.out.println("⏳ 正在初始化双擎模型 (Embedding + Rerank)...");
+            logger.debug("⏳ 正在初始化双擎模型 (Embedding + Rerank)...");
             long initStart = System.currentTimeMillis();
             DJLLocalClient client = new DJLLocalClient();
-            System.out.println("✅ 初始化完成，耗时: " + (System.currentTimeMillis() - initStart) + " ms\n");
+            logger.debug("✅ 初始化完成，耗时: " + (System.currentTimeMillis() - initStart) + " ms\n");
 
             // ==========================================
             // 测试 1: 向量化 Embedding 距离测试
@@ -524,7 +531,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             double[] v2 = client.embed(s2);
             double[] v3 = client.embed(s3);
 
-            System.out.println("=== 🧪 阶段一：向量检索距离测试 (0.2 风格) ===");
+            logger.debug("=== 🧪 阶段一：向量检索距离测试 (0.2 风格) ===");
             printDistance("相关句测试", s1, s2, v1, v2);
             printDistance("无关句测试", s1, s3, v1, v3);
 
@@ -532,7 +539,7 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             // ==========================================
             // 测试 2: Rerank 交叉编码器精度测试
             // ==========================================
-            System.out.println("=== 🎯 阶段二：Rerank 交叉精排能力测试 ===");
+            logger.debug("=== 🎯 阶段二：Rerank 交叉精排能力测试 ===");
 
             String query = "老师的初始密码是多少？";
             // 文档1：强相关（完全符合教师身份）
@@ -556,20 +563,20 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             String score2 = client.generate(query, doc2);
             long t3 = System.currentTimeMillis();
 
-            System.out.printf("【用户提问】: %s\n", query);
-            System.out.println("-------------------------------------------------------------------------");
+            logger.debug(String.format("【用户提问】: %s", query));
+            logger.debug("-------------------------------------------------------------------------");
 
-            System.out.printf("[强相关 - 耗时 %3d ms] 教师密码说明\n", (t1 - start1));
-            System.out.printf("内容: %s\n👉 Rerank 原始打分: %s \n\n", doc1, score1);
+            logger.debug(String.format("[强相关 - 耗时 %3d ms] 教师密码说明", (t1 - start1)));
+            logger.debug(String.format("内容: %s\n👉 Rerank 原始打分: %s \n", doc1, score1));
 
-            System.out.printf("[易混淆 - 耗时 %3d ms] 学生密码说明 (向量检索容易误判)\n", (t2 - t1));
-            System.out.printf("内容: %s\n👉 Rerank 原始打分: %s \n\n", doc3, score3);
+            logger.debug(String.format("[易混淆 - 耗时 %3d ms] 学生密码说明 (向量检索容易误判)", (t2 - t1)));
+            logger.debug(String.format("内容: %s\n👉 Rerank 原始打分: %s \n", doc3, score3));
 
-            System.out.printf("[极无关 - 耗时 %3d ms] 安装环境说明\n", (t3 - t2));
-            System.out.printf("内容: %s\n👉 Rerank 原始打分: %s \n\n", doc2, score2);
+            logger.debug(String.format("[极无关 - 耗时 %3d ms] 安装环境说明", (t3 - t2)));
+            logger.debug(String.format("内容: %s\n👉 Rerank 原始打分: %s \n", doc2, score2));
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
 
@@ -586,12 +593,12 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
             double[] v2 = client.embed(s2);
             double[] v3 = client.embed(s3);
 
-            System.out.println("\n=== 🧪 语义距离测试 (0.2 风格) ===");
+            logger.debug("\n=== 🧪 语义距离测试 (0.2 风格) ===");
             printDistance("相关句测试", s1, s2, v1, v2);
             printDistance("无关句测试", s1, s3, v1, v3);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
 
@@ -608,6 +615,6 @@ String path = "C:/Users/Administrator/.djl.ai/cache/repo/model/nlp/text_embeddin
         double cosineSim = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
         double distance = 1.0 - cosineSim; // 现在和 Postgres 握手成功了
 
-        System.out.printf("[%s]\n   A: %s\n   B: %s\n   👉 统一距离: %.4f\n\n", label, t1, t2, distance);
+        logger.debug(String.format("[%s]\n   A: %s\n   B: %s\n   👉 统一距离: %.4f\n", label, t1, t2, distance));
     }
 }

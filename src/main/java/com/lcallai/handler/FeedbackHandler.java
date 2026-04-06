@@ -6,6 +6,8 @@ import com.lcallai.intent.IntentHandler;
 import com.lcallai.intent.IntentResult;
 
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * FEEDBACK 处理器
@@ -18,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 避免了原代码中把状态放在 ChatAnswer 成员变量上的并发隐患。
  */
 public class FeedbackHandler implements IntentHandler {
+    private static final Logger logger = LogManager.getLogger(FeedbackHandler.class);
 
     /** key = sessionId，value = 连续负面次数 */
     private final ConcurrentHashMap<String, Integer> negCountMap = new ConcurrentHashMap<>();
@@ -38,7 +41,7 @@ public class FeedbackHandler implements IntentHandler {
         if (result.sentiment == IntentResult.Sentiment.NEGATIVE) {
             String sid = session.getSessionId();
             int count = negCountMap.merge(sid, 1, Integer::sum);
-            System.out.println("[FeedbackHandler] session=" + sid + " 负面次数=" + count);
+            logger.debug("[FeedbackHandler] session=" + sid + " 负面次数=" + count);
 
             String reply = "非常抱歉给您带来不便，我已记录这个问题。";
             if (count >= transferThreshold) {

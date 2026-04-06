@@ -4,8 +4,11 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class AiConfig {
+    private static final Logger logger = LogManager.getLogger(AiConfig.class);
 
     public static String configPath=null;
     public static String configFile;
@@ -65,7 +68,7 @@ public class AiConfig {
             configMap.clear();
             configMap.putAll(newMap);
 
-            System.out.println("AiConfig loaded: " + configMap.size());
+            logger.debug("AiConfig loaded: " + configMap.size());
 
         } catch (Exception e) {
 

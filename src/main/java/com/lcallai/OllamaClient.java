@@ -7,8 +7,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import okhttp3.*;
 import okhttp3.OkHttpClient;
 import java.util.concurrent.TimeUnit;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class OllamaClient implements LlmClient, EmbeddingClient {
+    private static final Logger logger = LogManager.getLogger(OllamaClient.class);
     
     private final String baseUrl; 
     private final String chatModel; 
@@ -98,9 +101,9 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         	// 直接解析成 JsonNode 并注入 root
         	//root.set("tools", mapper.readTree(toolsJson));
 
-        	 System.out.println("✅ 发送sendRequest..."+root.toString());
+        	 logger.debug("✅ 发送sendRequest..."+root.toString());
         String res= sendRequest(baseUrl + "/chat/completions", root);
-       // System.out.println("✅ 收到应答   res="+res);
+       // logger.debug("✅ 收到应答   res="+res);
         return res;
     }
     public String chat2(ArrayNode messages) throws Exception {
@@ -153,7 +156,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
             long durationMs = (endTime - startTime) / 1_000_000; // 转换为毫秒 (Convert to milliseconds)
 
             // 3. 打印或记录日志 (Log the performance metrics)
-            System.out.printf("Embedding completed in %d ms for model: %s%n", durationMs, this.embedModel);
+            logger.debug(String.format("Embedding completed in %d ms for model: %s", durationMs, this.embedModel));
         }
     }
 
@@ -224,14 +227,14 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         // 🌟 与 Postgres <=> 逻辑保持一致
         double distance = 1.0 - cosineSim;
 
-        System.out.printf("[%s]\n   👉 语义距离 (越小越近): %.4f\n\n", label, distance);
+        logger.debug(String.format("[%s]\n   👉 语义距离 (越小越近): %.4f\n", label, distance));
     }
 
 
 
     public static void main(String[] args) {
         try {
-            System.out.println("⏳ 正在初始化 Qwen Online 引擎...");
+            logger.debug("⏳ 正在初始化 Qwen Online 引擎...");
 
             // ==========================================
             // 1. 严格参考 SessionManager 的 qwen-online 初始化
@@ -252,18 +255,18 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
                     httpClient,
                     qwenApiKey
             );
-            System.out.println("✅ Qwen Online 初始化完成！\n");
+            logger.debug("✅ Qwen Online 初始化完成！\n");
 
             // ==========================================
             // 0. 🔥 在线 API 网络预热 (建立 HTTP 缓存连接池)
             // ==========================================
-            System.out.println("🔥 正在进行网络预热 (建立 TCP/TLS 连接池以消除冷启动延迟)...");
+            logger.debug("🔥 正在进行网络预热 (建立 TCP/TLS 连接池以消除冷启动延迟)...");
             long warmupStart = System.currentTimeMillis();
             // 在线预热调用1次即可完成握手缓存（注意：这里会产生极少量的 Token 计费）
             qwenClient.embed("预热占位文本");
             qwenClient.generate("请回复数字1", "测试");
             long warmupTime = System.currentTimeMillis() - warmupStart;
-            System.out.println("✅ 网络预热完成！(预热阶段总耗时: " + warmupTime + " ms)\n");
+            logger.debug("✅ 网络预热完成！(预热阶段总耗时: " + warmupTime + " ms)\n");
 
 
             // ==========================================
@@ -273,17 +276,17 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
             String docA_Correct = "【适用对象：老师】初始密码统一设置为大写A202101小写b。";
             String docB_Trap = "【适用对象：学生】的默认登录口令是身份证后六位。";
 
-            System.out.println("【用户提问】: " + query);
-            System.out.println("---------------------------------------------------------");
-            System.out.println("[文档 A - 正确但字面不重合]: " + docA_Correct);
-            System.out.println("[文档 B - 错误但字面强重合]: " + docB_Trap);
-            System.out.println("---------------------------------------------------------\n");
+            logger.debug("【用户提问】: " + query);
+            logger.debug("---------------------------------------------------------");
+            logger.debug("[文档 A - 正确但字面不重合]: " + docA_Correct);
+            logger.debug("[文档 B - 错误但字面强重合]: " + docB_Trap);
+            logger.debug("---------------------------------------------------------\n");
 
             // ==========================================
             // 🧪 阶段一：纯 Qwen Embedding 向量距离测试 (粗排)
             // ==========================================
-            System.out.println("=== 🧪 阶段一：Qwen Embedding (text-embedding-v3) 距离计算 ===");
-            System.out.println("公式: 1.0 - CosineSim (与 Postgres <=> 对齐，越小越近)");
+            logger.debug("=== 🧪 阶段一：Qwen Embedding (text-embedding-v3) 距离计算 ===");
+            logger.debug("公式: 1.0 - CosineSim (与 Postgres <=> 对齐，越小越近)");
 
             long embedStart = System.currentTimeMillis();
             double[] vQuery = qwenClient.embed(query);
@@ -291,7 +294,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
             double[] vDocB = qwenClient.embed(docB_Trap);
             long embedTime = System.currentTimeMillis() - embedStart;
 
-            System.out.printf("⏱️ Embedding 3条文本实际请求总耗时: %d ms (平均: %d ms/条)\n\n", embedTime, embedTime / 3);
+            logger.debug(String.format(" Embedding 3条文本实际请求总耗时: %d ms (平均: %d ms/条)\n", embedTime, embedTime / 3));
 
             printDistance("正确答案 A", query, docA_Correct, vQuery, vDocA);
             printDistance("陷阱答案 B", query, docB_Trap, vQuery, vDocB);
@@ -300,8 +303,8 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
             // ==========================================
             // 🎯 阶段二：纯 Qwen Rerank 测试 (精排)
             // ==========================================
-            System.out.println("\n=== 🎯 阶段二：Qwen LLM Rerank (qwen-plus) 语义打分 ===");
-            System.out.println("说明: 利用大模型强大的逻辑推理能力，判断适用对象是老师还是学生。");
+            logger.debug("\n=== 🎯 阶段二：Qwen LLM Rerank (qwen-plus) 语义打分 ===");
+            logger.debug("说明: 利用大模型强大的逻辑推理能力，判断适用对象是老师还是学生。");
 
             // 参考 ask3 里的 Rerank Prompt 设计逻辑
             String rerankPrompt = "你是一个严格的搜索相关性排序专家。请判断以下文档是否能正确回答用户的问题。" +
@@ -321,12 +324,12 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
 
             long rerankTotalTime = System.currentTimeMillis() - rerankTotalStart;
 
-            System.out.printf("[Doc A] 耗时 %d ms 👉 Qwen Rerank 最终打分: %s\n", timeA, qwenScoreA.trim());
-            System.out.printf("[Doc B] 耗时 %d ms 👉 Qwen Rerank 最终打分: %s\n", timeB, qwenScoreB.trim());
-            System.out.printf("⏱️ Rerank 2次网络请求+推理总耗时: %d ms\n\n", rerankTotalTime);
+            logger.debug(String.format("[Doc A] 耗时 %d ms 👉 Qwen Rerank 最终打分: %s", timeA, qwenScoreA.trim()));
+            logger.debug(String.format("[Doc B] 耗时 %d ms 👉 Qwen Rerank 最终打分: %s", timeB, qwenScoreB.trim()));
+            logger.debug(String.format(" Rerank 2次网络请求+推理总耗时: %d ms\n", rerankTotalTime));
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
 
@@ -346,7 +349,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         }
         double cosineSim = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
         double distance = 1.0 - cosineSim;
-        System.out.printf("   [%s] 👉 向量距离: %.4f\n", label, distance);
+        logger.debug(String.format("   [%s] 👉 向量距离: %.4f", label, distance));
     }
      */
 }

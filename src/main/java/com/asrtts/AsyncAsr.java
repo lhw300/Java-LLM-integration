@@ -8,7 +8,10 @@
 	import java.io.IOException;
 	import java.util.concurrent.TimeUnit;
     import java.util.concurrent.CountDownLatch;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 	public class AsyncAsr {
+    private static final Logger logger = LogManager.getLogger(AsyncAsr.class);
 
 	    private WebSocket webSocket;
 	    private final OkHttpClient client;
@@ -39,7 +42,7 @@
 	        webSocket = client.newWebSocket(request, new WebSocketListener() {
 	            @Override
 	            public void onOpen(WebSocket webSocket, Response response) {
-	                System.out.println("ASR WebSocket 连接已建立，开始读取文件: " + filePath);
+	                logger.debug("ASR WebSocket 连接已建立，开始读取文件: " + filePath);
 	                // 开启新线程读取并发送音频数据
 	                new Thread(() -> streamFile8k(filePath)).start();
 	            }
@@ -47,7 +50,7 @@
 
 	            @Override
 	            public void onMessage(WebSocket webSocket, String text) {
-                    System.out.println("识别结果 > " + text);
+                    logger.debug("识别结果 > " + text);
 
                     // ★ 修改点 1：只要收到消息且已经发送了 done，就实时更新耗时
                     if (doneTime > 0) {
@@ -57,7 +60,7 @@
                     // ★ 修改点 2：核心修复 - 监听后端返回的 "finished": true 信号
                     // 只有彻底识别完，才触发 latch.countDown() 让主线程进入下一轮
                     if (text.contains("\"finished\":true") || text.contains("\"finished\": true")) {
-                        System.out.println(">>> 任务完成，本回合最终耗时: " + lastElapsed + "ms");
+                        logger.debug(">>> 任务完成，本回合最终耗时: " + lastElapsed + "ms");
                         latch.countDown();
                     }
 	            }
@@ -70,7 +73,7 @@
 	                
 	                // 只有在不是正常结束的情况下才打印错误
 	                if (!"Socket closed".equals(msg)) {
-	                    System.err.println("ASR 连接状态: " + msg);
+	                    logger.error("ASR 连接状态: " + msg);
 	                }
                     latch.countDown(); // 发生异常也释放，防止主线程死锁
 	            }
@@ -79,9 +82,9 @@
 	            public void onClosing(WebSocket webSocket, int code, String reason) {
 	            	// 收到 1000 表示正常关闭，不需要报错
 	                if (code == 1000) {
-	                    System.out.println("ASR 识别任务已圆满完成。");
+	                    logger.debug("ASR 识别任务已圆满完成。");
 	                } else {
-	                    System.err.println("连接意外关闭: " + reason);
+	                    logger.error("连接意外关闭: " + reason);
 	                }
 	                webSocket.close(1000, null);
 	            }
@@ -109,11 +112,11 @@
 	         // 核心：告知后端音频已传输完毕
 	            Thread.sleep(1500);
 	            webSocket.send("done"); 
-	            System.out.println("发送完毕，已投递结束信号。");
+	            logger.debug("发送完毕，已投递结束信号。");
 	            
 	     
 	        } catch (IOException | InterruptedException e) {
-	            System.err.println("读取文件出错: " + e.getMessage());
+	            logger.error("读取文件出错: " + e.getMessage());
 	        }
 	    }
         /**
@@ -170,7 +173,7 @@
 
                 int bytesRead;
 
-                System.out.println("正在模拟电话线路实时流 (8k 本地重采样 16k 发送)...");
+                logger.debug("正在模拟电话线路实时流 (8k 本地重采样 16k 发送)...");
                 int size = 0;
 
                 while ((bytesRead = fis.read(buffer8k)) != -1) {
@@ -190,10 +193,10 @@
 
                 webSocket.send("done"); // 发送结束信号
                 doneTime = System.currentTimeMillis();
-                System.out.println("电话录音发送完毕。累计发送 16k 数据量: " + size + " 字节");
+                logger.debug("电话录音发送完毕。累计发送 16k 数据量: " + size + " 字节");
 
             } catch (Exception e) {
-                System.err.println("读取文件或发送失败: " + e.getMessage());
+                logger.error("读取文件或发送失败: " + e.getMessage());
                 // 如果出错，记得释放 latch 防止死锁
                 if (latch != null) {
                     latch.countDown();
@@ -212,7 +215,7 @@
 	            
 	            int bytesRead;
 
-	            System.out.println("正在模拟  电话线路实时流...");
+	            logger.debug("正在模拟  电话线路实时流...");
 	            int size=0;
 	            while ((bytesRead = fis.read(buffer)) != -1) {
 	                if (webSocket != null) {
@@ -222,16 +225,16 @@
 	                    // 3. 严格同步：发送 100ms 的数据就必须睡足 100ms
 	                    // 如果发得太快，后端 ASR 引擎会因为数据堆积导致识别逻辑失效
 	                     Thread.sleep(100);
-	                   // if(size%2000==0) System.out.println("电话录音发送  size="+size);
+	                   // if(size%2000==0) logger.debug("电话录音发送  size="+size);
 	                }
 	            }
 	            //Thread.sleep(1500);
 	            webSocket.send("done"); // 发送结束信号
                 // ★★★ 去掉 sleep(1500)，记录发送 done 的时间 ★★★
                 doneTime = System.currentTimeMillis();
-	            System.out.println("电话录音发送完毕。");
+	            logger.debug("电话录音发送完毕。");
 	        } catch (Exception e) {
-	            System.err.println("读取文件或发送失败: " + e.getMessage());
+	            logger.error("读取文件或发送失败: " + e.getMessage());
 	        }
 	    }
 
@@ -246,10 +249,10 @@
                 asrClient.latch.await();  // ★ 替换 Thread.sleep(5000)
                 Thread.sleep(5000);  // ★ 加这行
                 totalElapsed += asrClient.getLastElapsed(); // ★ 需要新增这个方法
-                System.out.println("第" + (i+1) + "次耗时: " + asrClient.getLastElapsed() + "ms");
+                logger.debug("第" + (i+1) + "次耗时: " + asrClient.getLastElapsed() + "ms");
             }
 
-            System.out.println("平均耗时: " + totalElapsed / times + "ms");
+            logger.debug("平均耗时: " + totalElapsed / times + "ms");
         }
 
  */
@@ -261,7 +264,7 @@ public static void main(String[] args) throws InterruptedException {
 
     for (int r = 0; r < rounds; r++) {
         Thread.sleep(3000);  // ★ 加这行
-        System.out.println("=== 第" + (r+1) + "轮 ===");
+        logger.debug("=== 第" + (r+1) + "轮 ===");
         AsyncAsr[] clients = new AsyncAsr[concurrent];
 
         // ★ 同时启动所有并发
@@ -276,10 +279,10 @@ public static void main(String[] args) throws InterruptedException {
 
             totalElapsed += clients[i].getLastElapsed();
             totalCount++;
-            System.out.println("第" + (r+1) + "轮第" + (i+1) + "个耗时: " + clients[i].getLastElapsed() + "ms");
+            logger.debug("第" + (r+1) + "轮第" + (i+1) + "个耗时: " + clients[i].getLastElapsed() + "ms");
         }
     }
 
-    System.out.println("总平均耗时: " + totalElapsed / totalCount + "ms");
+    logger.debug("总平均耗时: " + totalElapsed / totalCount + "ms");
 }
 	}

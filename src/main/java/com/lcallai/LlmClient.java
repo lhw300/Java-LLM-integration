@@ -1,11 +1,14 @@
 package com.lcallai;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 统一的大模型调用接口
  */
 public interface LlmClient {
+     static final Logger logger = LogManager.getLogger(LlmClient.class);
     
     /**
      * 多轮对话生成
@@ -57,7 +60,7 @@ public interface LlmClient {
         }
 
         // 4. 兜底日志：如果大模型彻底胡言乱语没有合法数字，输出日志方便排查 Prompt
-        System.out.println("⚠️ Rerank 无法从大模型回复中提取合法分数，原回复: " + scoreRaw);
+        logger.debug("⚠️ Rerank 无法从大模型回复中提取合法分数，原回复: " + scoreRaw);
         return 0.0;
     }
 }

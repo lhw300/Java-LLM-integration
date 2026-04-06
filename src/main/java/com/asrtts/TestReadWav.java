@@ -3,8 +3,11 @@ package com.asrtts;
 
 	import java.io.*;
 	import java.nio.charset.StandardCharsets;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class TestReadWav {
+    private static final Logger logger = LogManager.getLogger(TestReadWav.class);
 
 	    // ---------- 数据结构 ----------
 	    static class WavG711 {
@@ -29,22 +32,22 @@ public class TestReadWav {
 
 	        WavG711 wav = readG711Wav(new File(wavPath));
 
-	        System.out.println("====== WAV INFO ======");
-	        System.out.println("sampleRate     = " + wav.sampleRate);
-	        System.out.println("channels       = " + wav.channels);
-	        System.out.println("bitsPerSample  = " + wav.bitsPerSample);
-	        System.out.println("audioFormat    = " + wav.audioFormat
+	        logger.debug("====== WAV INFO ======");
+	        logger.debug("sampleRate     = " + wav.sampleRate);
+	        logger.debug("channels       = " + wav.channels);
+	        logger.debug("bitsPerSample  = " + wav.bitsPerSample);
+	        logger.debug("audioFormat    = " + wav.audioFormat
 	                + (wav.audioFormat == 6 ? " (A-law)" :
 	                   wav.audioFormat == 7 ? " (μ-law)" : " (UNKNOWN)"));
-	        System.out.println("data bytes     = " + wav.data.length);
-	        System.out.println("======================");
+	        logger.debug("data bytes     = " + wav.data.length);
+	        logger.debug("======================");
 
 	        // 简单 sanity check：前 16 个字节
-	        System.out.print("first 16 data bytes: ");
+	        logger.debug("first 16 data bytes: ");
 	        for (int i = 0; i < Math.min(16, wav.data.length); i++) {
-	            System.out.printf("%02X ", wav.data[i]);
+	            logger.debug(String.format("%02X ", wav.data[i]));
 	        }
-	        System.out.println();
+	        logger.debug("");
 	    }
 
 	    // ---------- WAV 读取实现（Java 8 安全版） ----------
@@ -77,7 +80,7 @@ public class TestReadWav {
 
 	                chunkSize = readLE32u(in);
 
-	                System.out.println("chunk: " + chunkId + " size=" + chunkSize);
+	                logger.debug("chunk: " + chunkId + " size=" + chunkSize);
 
 	                if ("fmt ".equals(chunkId)) {
 	                    audioFormat = readLE16(in); // 6=A-law, 7=μ-law

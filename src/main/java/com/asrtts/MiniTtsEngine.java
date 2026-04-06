@@ -5,8 +5,11 @@ import okhttp3.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.IOException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class MiniTtsEngine {
+    private static final Logger logger = LogManager.getLogger(MiniTtsEngine.class);
     // 替换为你的真实 API Key
     private static final String API_KEY = System.getenv("OPENAI_API_KEY");
 
@@ -44,7 +47,7 @@ public class MiniTtsEngine {
             byte[] audio = response.body().bytes();
             Files.write(Path.of("tts.wav"), audio);
             
-            System.out.println("Audio saved to tts.wav - Succès !");
+            logger.debug("Audio saved to tts.wav - Succès !");
         }
     }
 }

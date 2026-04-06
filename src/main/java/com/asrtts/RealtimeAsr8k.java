@@ -5,8 +5,11 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.TimeUnit;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class RealtimeAsr8k {
+    private static final Logger logger = LogManager.getLogger(RealtimeAsr8k.class);
 
   public static void main(String[] args) throws Exception {
     String apiKey = System.getenv("OPENAI_API_KEY");
@@ -37,7 +40,7 @@ public class RealtimeAsr8k {
     WebSocket ws = client.newWebSocket(request, new WebSocketListener() {
       @Override
       public void onOpen(WebSocket webSocket, Response response) {
-        System.out.println("WS opened");
+        logger.debug("WS opened");
 
         // 注意：模型名必须是 gpt-4o-transcribe（不要拼错）
         String sessionUpdate =
@@ -73,27 +76,27 @@ public class RealtimeAsr8k {
         // 重点看：
         // - conversation.item.input_audio_transcription.delta
         // - conversation.item.input_audio_transcription.completed
-        System.out.println(text);
+        logger.debug(text);
       }
 
       @Override
       public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-        System.err.println("WS failure: " + t.getMessage());
-        t.printStackTrace();
+        logger.error("WS failure: " + t.getMessage());
+        logger.error("", t);
         if (response != null) {
-          System.err.println("HTTP " + response.code() + " " + response.message());
+          logger.error("HTTP " + response.code() + " " + response.message());
         }
       }
 
       @Override
       public void onClosing(WebSocket webSocket, int code, String reason) {
-        System.out.println("WS closing: " + code + " " + reason);
+        logger.debug("WS closing: " + code + " " + reason);
         webSocket.close(code, reason);
       }
 
       @Override
       public void onClosed(WebSocket webSocket, int code, String reason) {
-        System.out.println("WS closed: " + code + " " + reason);
+        logger.debug("WS closed: " + code + " " + reason);
       }
     });
 
@@ -108,7 +111,7 @@ public class RealtimeAsr8k {
   static void streamAlawFrames(WebSocket ws, byte[] alawData) {
     final int frameBytes = 160;
     final int sleepMs = 20;
-System.out.println(" length "+ alawData.length);
+logger.debug(" length "+ alawData.length);
     int offset = 0;
     while (offset + frameBytes <= alawData.length) {
       byte[] frame = new byte[frameBytes];
@@ -131,7 +134,7 @@ System.out.println(" length "+ alawData.length);
     // 如果你想模拟 Push-to-Talk：一段结束时 commit
     // ws.send("{\"type\":\"input_audio_buffer.commit\"}");
 
-    System.out.println("Audio stream finished.");
+    logger.debug("Audio stream finished.");
   }
 
   // ---------------- WAV reader: G.711 A-law / μ-law ----------------

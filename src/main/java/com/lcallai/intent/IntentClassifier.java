@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lcallai.LlmClient;
 import com.lcallai.QueryHistory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 意图分类器
@@ -15,6 +17,7 @@ import com.lcallai.QueryHistory;
  *   - JSON 解析容错：兼容带 ```json``` 包装的模型输出
  */
 public class IntentClassifier {
+    private static final Logger logger = LogManager.getLogger(IntentClassifier.class);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -55,12 +58,12 @@ public class IntentClassifier {
             String userPrompt = historyCtx == null || historyCtx.isBlank()
                     ? "用户输入：" + userText
                     : "对话历史：\n" + historyCtx + "\n\n用户最新输入：" + userText;
-            System.out.println("[IntentClassifier] 原始输入: " + userPrompt);
+            logger.debug("[IntentClassifier] 原始输入: " + userPrompt);
             String raw = llmClient.generate(this.systemPrompt, userPrompt); // 改这里
-            System.out.println("[IntentClassifier] 原始输出: " + raw);
+            logger.debug("[IntentClassifier] 原始输出: " + raw);
             return parse(raw, userText);
         } catch (Exception e) {
-            System.err.println("[IntentClassifier] 分类异常，降级为 QUERY: " + e.getMessage());
+            logger.error("[IntentClassifier] 分类异常，降级为 QUERY: " + e.getMessage());
             return fallback(userText);
         }
     }
@@ -79,7 +82,7 @@ public class IntentClassifier {
             try {
                 intent = IntentResult.Intent.valueOf(intentStr);
             } catch (IllegalArgumentException ex) {
-                System.err.println("[IntentClassifier] 未知 intent 值: " + intentStr + "，降级 QUERY");
+                logger.error("[IntentClassifier] 未知 intent 值: " + intentStr + "，降级 QUERY");
                 return fallback(fallbackText);
             }
 
@@ -101,7 +104,7 @@ public class IntentClassifier {
                     .build();
 
         } catch (Exception e) {
-            System.err.println("[IntentClassifier] JSON 解析失败，降级 QUERY。原始内容: " + raw);
+            logger.error("[IntentClassifier] JSON 解析失败，降级 QUERY。原始内容: " + raw);
             return fallback(fallbackText);
         }
     }

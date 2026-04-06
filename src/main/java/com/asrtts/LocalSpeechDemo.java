@@ -3,8 +3,11 @@ package com.asrtts;
 
 
 import okhttp3.OkHttpClient;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class LocalSpeechDemo {
+    private static final Logger logger = LogManager.getLogger(LocalSpeechDemo.class);
     public static void main(String[] args) {
 
         // 1. 实现监听器 (完全贴合你的业务逻辑)
@@ -12,17 +15,17 @@ public class LocalSpeechDemo {
             @Override
             public void onMessage(byte[] message) {
                 // 这里对接你的电话交换机 SipCallManager，或者存文件
-                System.out.println("拿到语音数据块，长度: " + message.length);
+                logger.debug("拿到语音数据块，长度: " + message.length);
             }
 
             @Override
             public void onComplete() {
-                System.out.println("整句播报合成完毕！");
+                logger.debug("整句播报合成完毕！");
             }
 
             @Override
             public void onFail(String errorMessage) {
-                System.err.println("合成失败，原因: " + errorMessage);
+                logger.error("合成失败，原因: " + errorMessage);
             }
         };
 
@@ -39,12 +42,12 @@ public class LocalSpeechDemo {
         synthesizer.setText("光猫状态异常，请派单上门维修。");
 
         // 5. 开始合成！
-        System.out.println("请求发起...");
+        logger.debug("请求发起...");
         synthesizer.start();
 
         // 6. 阻塞等待任务完成 (防止 main 线程提前退出)
         synthesizer.waitForComplete();
-        System.out.println("任务结束。");
+        logger.debug("任务结束。");
 
         // 测试完毕退出
         System.exit(0);

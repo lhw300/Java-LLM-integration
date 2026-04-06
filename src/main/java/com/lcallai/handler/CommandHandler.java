@@ -4,6 +4,8 @@ import com.lcallai.ChatAnswer;
 import com.lcallai.ChatSession;
 import com.lcallai.intent.IntentHandler;
 import com.lcallai.intent.IntentResult;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * COMMAND 处理器
@@ -20,6 +22,7 @@ import com.lcallai.intent.IntentResult;
  * 扩展方式：在 switch 里增加新的 case，无需修改其他类。
  */
 public class CommandHandler implements IntentHandler {
+    private static final Logger logger = LogManager.getLogger(CommandHandler.class);
 
     @Override
     public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
@@ -28,12 +31,12 @@ public class CommandHandler implements IntentHandler {
         // 1. 防御：如果模型判断为 COMMAND 但没给 code（比如“帮我安装”、“我要查话费”）
         if (code == null || code.isBlank() || "null".equalsIgnoreCase(code)) {
             // 既然是出版社业务，这里可以做一层业务引导
-            System.err.println("[CommandHandler] action_code 为空，原始输入: " + rawText);
+            logger.error("[CommandHandler] action_code 为空，原始输入: " + rawText);
             return new ChatAnswer(0, "收到您的指令，但我目前只能帮您转人工 或者重复说上一次 或您可以直接描述您遇到的问题。");
         }
 
 
-        System.out.println("[CommandHandler] 执行动作: " + code);
+        logger.debug("[CommandHandler] 执行动作: " + code);
 
         // 传统写法：直接对 code 进行判断，并在每个 case 中显式 return
         switch (code) {
@@ -58,7 +61,7 @@ public class CommandHandler implements IntentHandler {
                 return ChatAnswer.ofAction(result, ChatAnswer.Action.HANGUP, "好的，再见！");
 
             default:
-                System.err.println("[CommandHandler] 未知动作码: " + code);
+                logger.error("[CommandHandler] 未知动作码: " + code);
                 return new ChatAnswer(-1, "暂不支持该指令", result);
         }
     }

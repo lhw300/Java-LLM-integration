@@ -4,6 +4,8 @@ import com.lcallai.ChatAnswer;
 import com.lcallai.ChatSession;
 import com.lcallai.intent.IntentHandler;
 import com.lcallai.intent.IntentResult;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * CHITCHAT 处理器
@@ -17,6 +19,7 @@ import com.lcallai.intent.IntentResult;
  */
 
     public class ChitchatHandler implements IntentHandler {
+    private static final Logger logger = LogManager.getLogger(ChitchatHandler.class);
     private final String chitchatPrompt;
 
     public ChitchatHandler(String chitchatPrompt) {
@@ -24,7 +27,7 @@ import com.lcallai.intent.IntentResult;
     }
         @Override
         public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
-            System.out.println("[ChitchatHandler] 切换至纯净对话模式，跳过所有知识库检索");
+            logger.debug("[ChitchatHandler] 切换至纯净对话模式，跳过所有知识库检索");
 
             try {
                 // 1. 获取重写后的查询（可选，建议保留以维持多轮对话连贯性）
@@ -39,7 +42,7 @@ import com.lcallai.intent.IntentResult;
 
 
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.error("", e);
                 return new ChatAnswer(-1, "闲聊系统暂时休息了: ", result);
             }
         }

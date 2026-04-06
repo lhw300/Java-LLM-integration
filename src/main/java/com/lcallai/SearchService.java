@@ -11,8 +11,11 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.file.Path;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class SearchService {
+    private static final Logger logger = LogManager.getLogger(SearchService.class);
     private static HikariDataSource dataSource;
     private static SearcherManager luceneSearcherManager;
    // private static final String LUCENE_PATH = "E:\\EIT\\openai\\lucene_index";
@@ -37,6 +40,11 @@ public class SearchService {
      * 在 getRelevantKnowledge 调用时自动触发
      */
     public static synchronized void init(String aiType) {
+        if(aiType.equals("_NULL_")){
+            isInitialized = true;
+            logger.debug("未找到到向量存储类型storage.type，务必设置为rag.query.mode=fullText  ");
+            return;
+        }
         if (isInitialized) return;
 // 获取基础路径 (假设外部已调用过 AiConfig.init)
         String baseDir = AiConfig.configPath;
@@ -56,11 +64,11 @@ public class SearchService {
 
 
                     luceneSearcherManager   = new SearcherManager(dir, new SearcherFactory());
-                    System.out.println("✅ Lucene 搜索器初始化成功，路径: " + path.toAbsolutePath());
-                    System.out.println("✅ 已按需初始化 Lucene SearcherManager");
+                    logger.debug("✅ Lucene 搜索器初始化成功，路径: " + path.toAbsolutePath());
+                    logger.debug("✅ 已按需初始化 Lucene SearcherManager");
                 }
             } catch (Exception e) {
-                System.err.println("❌ Lucene 初始化失败: " + e.getMessage());
+                logger.error("❌ Lucene 初始化失败: " + e.getMessage());
             }
         } else {
             // 2. 初始化 Postgres 连接池
@@ -80,7 +88,7 @@ public class SearchService {
                 config.setKeepaliveTime(AiConfig.getIntConfig("db.postgres.pool.keepalive", 60000));
 
                 dataSource = new HikariDataSource(config);
-                System.out.println("✅ 已按需初始化 Postgres 连接池");
+                logger.debug("✅ 已按需初始化 Postgres 连接池");
             }
         }
         isInitialized = true;
@@ -96,7 +104,7 @@ public class SearchService {
         // --- Step 1: 向量化 ---
         long startEmbed = System.currentTimeMillis();
         double[] vector = embedClient.embed(query);
-        System.out.println("Step 1: [" + storage_type + "] Embedding took: " + (System.currentTimeMillis() - startEmbed) + " ms");
+        logger.debug("Step 1: [" + storage_type + "] Embedding took: " + (System.currentTimeMillis() - startEmbed) + " ms");
 
         // --- Step 2: 分支检索 ---
         List<KnowledgeItem> results;
@@ -108,7 +116,7 @@ public class SearchService {
             results = searchTopKnowledge(tableName, vector, 15);
         }
 
-        System.out.println("Step 2: [" + storage_type + "] Search took: " + (System.currentTimeMillis() - startSearch) + " ms");
+        logger.debug("Step 2: [" + storage_type + "] Search took: " + (System.currentTimeMillis() - startSearch) + " ms");
         return results;
     }
     /**
@@ -225,9 +233,9 @@ public class SearchService {
         try {
             if (dataSource != null) dataSource.close();
             if (luceneSearcherManager != null) luceneSearcherManager.close();
-            System.out.println("🌙 资源已关闭");
+            logger.debug("🌙 资源已关闭");
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         }
     }
     public static void main_online(String[] args) {
@@ -246,7 +254,7 @@ public class SearchService {
 
         // 🌟 生产环境对应的 Postgres 表名
         String tableName = "enterprise_knowledge_qwen_1024";
-        System.out.println("=== 🚀 Online RAG 性能压力测试启动 (Qwen + Postgres) ===");
+        logger.debug("=== 🚀 Online RAG 性能压力测试启动 (Qwen + Postgres) ===");
 
         try {
             // 🌟 1. 切换为 Online 客户端
@@ -254,13 +262,13 @@ public class SearchService {
             EmbeddingClient client = SessionManager.createQwenTurboClient();
 
          //   String mode = client.modeType();
-            System.out.println("检测到模式: " + AiConfig.getStringConfig("storage.type","local"));
+            logger.debug("检测到模式: " + AiConfig.getStringConfig("storage.type","local"));
 
             // 🌟 2. 自动执行 Postgres 连接池初始化
             init(AiConfig.getStringConfig("storage.type","local"));
 
             // Warmup (在线模式主要是为了激活动态连接池)
-            System.out.println("正在进行网络预热...");
+            logger.debug("正在进行网络预热...");
             client.embed("warmup");
 
             long totalEmbedTime = 0;
@@ -282,34 +290,34 @@ public class SearchService {
 
 
                 // 3. 打印详情
-                System.out.println("\n" + "=".repeat(100));
-                System.out.printf("【测试题目 %d】: %s\n", (i + 1), query);
-                System.out.printf("【性能指标】: | 数据库检索: %d ms\n",  searchMs);
-                System.out.println("-".repeat(100));
+                logger.debug("\n" + "=".repeat(100));
+                logger.debug(String.format("【测试题目 %d】: %s", (i + 1), query));
+                logger.debug(String.format("【性能指标】: | 数据库检索: %d ms",  searchMs));
+                logger.debug("-".repeat(100));
 
                 if (results.isEmpty()) {
-                    System.out.println("   ❌ 未能匹配到任何相关知识点");
+                    logger.debug("   ❌ 未能匹配到任何相关知识点");
                 } else {
                     int maxRows = Math.min(3, results.size());
                     for (int j = 0; j < maxRows; j++) {
                         SearchService.KnowledgeItem item = results.get(j);
                         // 🌟 此时 item.distance 应该是 0.2 左右的原始距离
-                        System.out.printf("   [Top %d] 距离: %.2f | 分类: %s | 摘要: %s\n",
-                                (j + 1), item.distance, item.category, item.summary);
-                        System.out.println("          内容: " + item.content);
-                        if (j < maxRows - 1) System.out.println("          " + ".".repeat(30));
+                        logger.debug(String.format("   [Top %d] 距离: %.2f | 分类: %s | 摘要: %s",
+                                (j + 1), item.distance, item.category, item.summary));
+                        logger.debug("          内容: " + item.content);
+                        if (j < maxRows - 1) logger.debug("          " + ".".repeat(30));
                     }
                 }
             }
 
             // 4. 计算平均值 (修复了 double 转换 Bug)
-            System.out.println("\n" + "=".repeat(100));
-            System.out.printf("📊 平均向量化耗时 (API): %.2f ms\n", (double)totalEmbedTime / testQueries.length);
-            System.out.printf("📊 平均检索耗时 (DB):  %.2f ms\n", (double)totalSearchTime / testQueries.length);
-            System.out.println("✅ 测试完成。");
+            logger.debug("\n" + "=".repeat(100));
+            logger.debug(String.format("📊 平均向量化耗时 (API): %.2f ms", (double)totalEmbedTime / testQueries.length));
+            logger.debug(String.format("📊 平均检索耗时 (DB):  %.2f ms", (double)totalSearchTime / testQueries.length));
+            logger.debug("✅ 测试完成。");
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         } finally {
             SearchService.shutdown();
         }
@@ -330,14 +338,14 @@ public class SearchService {
         };
 
 
-        System.out.println("=== 🚀 本地 RAG 性能压力测试启动 (i5-1340P) ===");
+        logger.debug("=== 🚀 本地 RAG 性能压力测试启动 (i5-1340P) ===");
 
         try {
             // 1. 初始化环境：支持命令行传入路径，支持 Windows/Linux 跨平台
             String baseDir = (args.length > 0) ? args[0] : "e:\\ai";
             AiConfig.init(baseDir);
 
-            System.out.println("=== 🔍 SearchService 独立压力测试 ===");
+            logger.debug("=== 🔍 SearchService 独立压力测试 ===");
 
             // 初始化本地客户端（触发静态块锁定 DLL 和加载模型）
             EmbeddingClient client = new DJLLocalClient();
@@ -351,8 +359,8 @@ public class SearchService {
             long totalEmbedTime = 0;
             long totalSearchTime = 0;
 
-            System.out.printf("%-3s | %-20s | %-10s | %-10s | %-6s\n", "序号", "测试题目", "向量化(ms)", "检索耗时(ms)", "最佳距离");
-            System.out.println("----------------------------------------------------------------------------------");
+            logger.debug(String.format("%-3s | %-20s | %-10s | %-10s | %-6s", "序号", "测试题目", "向量化(ms)", "检索耗时(ms)", "最佳距离"));
+            logger.debug("----------------------------------------------------------------------------------");
 
             for (int i = 0; i < testQueries.length; i++) {
                 String query = testQueries[i];
@@ -369,35 +377,35 @@ public class SearchService {
                 long searchMs = endSearch - startSearch;
 
                 // 3. 打印表头及耗时统计
-                System.out.println("\n" + "=".repeat(100));
-                System.out.printf("【测试题目 %d】: %s\n", (i + 1), query);
-              //  System.out.printf("【性能指标】: 向量化: %d ms | 检索耗时: %d ms\n", embedMs, searchMs);
-                System.out.println("-".repeat(100));
+                logger.debug("\n" + "=".repeat(100));
+                logger.debug(String.format("【测试题目 %d】: %s", (i + 1), query));
+              //  logger.debug(String.format("【性能指标】: 向量化: %d ms | 检索耗时: %d ms", embedMs, searchMs));
+                logger.debug("-".repeat(100));
 
                 // 4. 打印 Top 3 知识点详情
                 if (results.isEmpty()) {
-                    System.out.println("   ❌ 未能匹配到任何相关知识点");
+                    logger.debug("   ❌ 未能匹配到任何相关知识点");
                 } else {
                     int maxRows = Math.min(3, results.size());
                     for (int j = 0; j < maxRows; j++) {
                         SearchService.KnowledgeItem item = results.get(j);
-                        System.out.printf("   [Top %d] 距离: %.2f | 分类: %s | 摘要: %s\n",
-                                (j + 1), item.distance, item.category, item.summary);
+                        logger.debug(String.format("   [Top %d] 距离: %.2f | 分类: %s | 摘要: %s",
+                                (j + 1), item.distance, item.category, item.summary));
                         // 内容可能较长，做个简单的缩进处理
-                        System.out.println("          内容: " + item.content);
-                        if (j < maxRows - 1) System.out.println("          " + ".".repeat(30));
+                        logger.debug("          内容: " + item.content);
+                        if (j < maxRows - 1) logger.debug("          " + ".".repeat(30));
                     }
                 }
             }
 
             // 计算平均值
-            System.out.println("----------------------------------------------------------------------------------");
-            System.out.printf("📊 平均向量化耗时: %.2f ms\n", (double)totalEmbedTime / testQueries.length);
-            System.out.printf("📊 平均检索耗时:   %.2f ms\n", (double)totalSearchTime / testQueries.length);
-            System.out.println("✅ 测试完成。");
+            logger.debug("----------------------------------------------------------------------------------");
+            logger.debug(String.format("📊 平均向量化耗时: %.2f ms", (double)totalEmbedTime / testQueries.length));
+            logger.debug(String.format("📊 平均检索耗时:   %.2f ms", (double)totalSearchTime / testQueries.length));
+            logger.debug("✅ 测试完成。");
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("", e);
         } finally {
             SearchService.shutdown();
         }
@@ -409,9 +417,9 @@ public class SearchService {
         String tableName = AiConfig.getStringConfig("db.postgres.table.online", "enterprise_knowledge_qwen_1024");
         String query = "学生账号初始密码是什么？";
 
-        System.out.println("=== 🔍 知识库检索测试启动 ===");
-        System.out.println("模式: " + aiType);
-        System.out.println("问题: " + query);
+        logger.debug("=== 🔍 知识库检索测试启动 ===");
+        logger.debug("模式: " + aiType);
+        logger.debug("问题: " + query);
 
         EmbeddingClient client = null;
         try {
@@ -441,22 +449,22 @@ public class SearchService {
             );
 
             // 3. 输出结果
-            System.out.println("\n--- 🎯 检索结果 (Top 3) ---");
+            logger.debug("\n--- 🎯 检索结果 (Top 3) ---");
             if (results.isEmpty()) {
-                System.out.println("❌ 未找到相关知识点");
+                logger.debug("❌ 未找到相关知识点");
             } else {
                 for (int i = 0; i < Math.min(results.size(), 3); i++) {
                     SearchService.KnowledgeItem item = results.get(i);
-                    System.out.printf("[%d] 分类: %s | 摘要: %s\n", (i + 1), item.category, item.summary);
-                    System.out.println("    内容: " + item.content);
-                    System.out.println("    得分/距离: " + item.distance);
-                    System.out.println("-----------------------------------");
+                    logger.debug(String.format("[%d] 分类: %s | 摘要: %s", (i + 1), item.category, item.summary));
+                    logger.debug("    内容: " + item.content);
+                    logger.debug("    得分/距离: " + item.distance);
+                    logger.debug("-----------------------------------");
                 }
             }
 
         } catch (Exception e) {
-            System.err.println("❌ 测试运行出错:");
-            e.printStackTrace();
+            logger.error("❌ 测试运行出错:");
+            logger.error("", e);
         } finally {
             // 4. 生产建议：关闭资源
             SearchService.shutdown();

@@ -7,8 +7,11 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 	public class ChatWithKnowledge {
+    private static final Logger logger = LogManager.getLogger(ChatWithKnowledge.class);
 
 	    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	    private static final OkHttpClient CLIENT = new OkHttpClient();
@@ -82,7 +85,7 @@ import java.util.List;
 	        inputBuilder.append("]");
 
 	        
-	        System.out.println("inputbuilder="+inputBuilder);
+	        logger.debug("inputbuilder="+inputBuilder);
 	        
 	        
 	        String bodyJson = "{"
@@ -108,11 +111,11 @@ import java.util.List;
 	            JsonNode outputNode = root.path("output");
 	            if (outputNode.isArray() && outputNode.size() > 0) {
 	                String text = outputNode.get(0).path("content").get(0).path("text").asText();
-	                System.out.println("Q: " + userQuestion);
-	                System.out.println("AI answer: " + text);
+	                logger.debug("Q: " + userQuestion);
+	                logger.debug("AI answer: " + text);
 	            }
 	        } catch (Exception e) {
-	            e.printStackTrace();
+	            logger.error("", e);
 	        }
 	    }
 

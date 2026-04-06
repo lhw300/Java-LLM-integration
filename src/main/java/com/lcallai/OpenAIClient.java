@@ -5,8 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import okhttp3.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class OpenAIClient implements LlmClient, EmbeddingClient {
+    private static final Logger logger = LogManager.getLogger(OpenAIClient.class);
     private final String apiKey;
     private final String chatModel; // 例如 gpt-4o-mini
     private final String embedModel; // 例如 text-embedding-3-small
@@ -59,11 +62,11 @@ public class OpenAIClient implements LlmClient, EmbeddingClient {
     	
     
     	
-        //  System.out.println("🤖 [OllamaClient] 发送本地请求: " + bodyJson);
+        //  logger.debug("🤖 [OllamaClient] 发送本地请求: " + bodyJson);
         String bodyJson2 = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(bodyNode);
         
         // 现在这里打印出来的就是易读的格式了
-        System.out.println("🤖 [openAI] 发送本地请求: \n" + bodyJson2);
+        logger.debug("🤖 [openAI] 发送本地请求: \n" + bodyJson2);
         
         RequestBody body = RequestBody.create(mapper.writeValueAsString(bodyNode), MediaType.parse("application/json"));
         Request request = new Request.Builder()

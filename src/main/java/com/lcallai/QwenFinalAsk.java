@@ -12,8 +12,11 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class QwenFinalAsk {
+    private static final Logger logger = LogManager.getLogger(QwenFinalAsk.class);
     // --- 核心配置 ---
     private static final String chatModel = "qwen-plus";
     private static final String TEST_JSON_PATH = "c:\\test3.json.txt";
@@ -29,25 +32,25 @@ public class QwenFinalAsk {
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        System.out.println("📂 [Qwen 模式] 已监控本地文件: " + TEST_JSON_PATH);
-        System.out.println("⌨️  指令说明: \n - 直接回车: 执行标准 chat\n - 输入 '2': 执行全量知识库测试 (chat2)\n - 输入 'exit': 退出");
+        logger.debug("📂 [Qwen 模式] 已监控本地文件: " + TEST_JSON_PATH);
+        logger.debug("⌨️  指令说明: \n - 直接回车: 执行标准 chat\n - 输入 '2': 执行全量知识库测试 (chat2)\n - 输入 'exit': 退出");
 
         QwenFinalAsk aq = new QwenFinalAsk();
 
         // 1. 预热逻辑
         try {
-            System.out.println("🔥 正在建立 TCP 长连接并预热云端 Cache...");
+            logger.debug("🔥 正在建立 TCP 长连接并预热云端 Cache...");
             ArrayNode warmupMessages = mapper.createArrayNode();
             warmupMessages.addObject().put("role", "user").put("content", "hi");
             long p1 = System.currentTimeMillis();
             aq.chat(warmupMessages);
-            System.out.println("✅ 预热完成，预热耗时: " + (System.currentTimeMillis() - p1) + " ms");
+            logger.debug("✅ 预热完成，预热耗时: " + (System.currentTimeMillis() - p1) + " ms");
         } catch (Exception e) {
-            System.err.println("⚠️ 预热失败: " + e.getMessage());
+            logger.error("⚠️ 预热失败: " + e.getMessage());
         }
 
         while (true) {
-            System.out.print("\n[Qwen 等待指令] > ");
+            logger.debug("\n[Qwen 等待指令] > ");
             String input = scanner.nextLine().trim();
             if ("exit".equalsIgnoreCase(input)) break;
 
@@ -61,24 +64,24 @@ public class QwenFinalAsk {
                 long start = System.currentTimeMillis();
 
                 if ("2".equals(input)) {
-                    System.out.println("📚 执行 chat2: 读取全量知识库并发送...");
+                    logger.debug("📚 执行 chat2: 读取全量知识库并发送...");
                     aiResponse = aq.chat2(messages);
                 } else {
-                    System.out.println("🚀 执行标准 chat: 发送当前 JSON 消息...");
+                    logger.debug("🚀 执行标准 chat: 发送当前 JSON 消息...");
                     aiResponse = aq.chat(messages);
                 }
 
                 long duration = System.currentTimeMillis() - start;
 
-                System.out.println("\n==================== Qwen 结果 ====================");
-                System.out.println("⏱️  总耗时: " + duration + " ms");
-                System.out.println("🤖 AI 回复内容:");
-                System.out.println("--------------------------------------------------");
-                System.out.println(aiResponse);
-                System.out.println("--------------------------------------------------");
+                logger.debug("\n==================== Qwen 结果 ====================");
+                logger.debug("  总耗时: " + duration + " ms");
+                logger.debug("🤖 AI 回复内容:");
+                logger.debug("--------------------------------------------------");
+                logger.debug(aiResponse);
+                logger.debug("--------------------------------------------------");
 
             } catch (Exception e) {
-                System.err.println("💥 运行时异常: " + e.getMessage());
+                logger.error("💥 运行时异常: " + e.getMessage());
             }
         }
     }
@@ -106,8 +109,8 @@ public class QwenFinalAsk {
             newMessages.add(originalMessages.get(i));
         }
 
-        System.out.println("📊 Context 总字符数: " + enrichedSystemPrompt.length());
-        System.out.println("📊 Context : " + newMessages.toString());
+        logger.debug("📊 Context 总字符数: " + enrichedSystemPrompt.length());
+        logger.debug("📊 Context : " + newMessages.toString());
         return execute(newMessages);
     }
 

@@ -7,7 +7,10 @@ import okhttp3.*;
 
 
 import java.util.function.Consumer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 		public class AsyncTts {
+    private static final Logger logger = LogManager.getLogger(AsyncTts.class);
 	 
 		    private WebSocket webSocket;
 		    private final OkHttpClient client;
@@ -32,7 +35,7 @@ import java.util.function.Consumer;
 		        webSocket = client.newWebSocket(request, new WebSocketListener() {
 		            @Override
 		            public void onOpen(WebSocket webSocket, Response response) {
-		                System.out.println("TTS WebSocket 连接已建立");
+		                logger.debug("TTS WebSocket 连接已建立");
 		            }
 
 		            @Override
@@ -47,12 +50,12 @@ import java.util.function.Consumer;
 
 		            @Override
 		            public void onMessage(WebSocket webSocket, String text) {
-		                System.out.println("收到服务端统计/状态信息: " + text);
+		                logger.debug("收到服务端统计/状态信息: " + text);
 		            }
 
 		            @Override
 		            public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-		                System.err.println("TTS 连接故障: " + t.getMessage());
+		                logger.error("TTS 连接故障: " + t.getMessage());
 		            }
 		        });
 		    }
@@ -62,10 +65,10 @@ import java.util.function.Consumer;
 		     */
 		    public void sendText(String text) {
 		        if (webSocket != null) {
-		            System.out.println("正在请求合成文字: " + text);
+		            logger.debug("正在请求合成文字: " + text);
 		            webSocket.send(text);
 		        } else {
-		            System.err.println("错误：WebSocket 未连接，请先执行 connect()");
+		            logger.error("错误：WebSocket 未连接，请先执行 connect()");
 		        }
 		    }
 		    public static void main(String[] args) {
@@ -74,7 +77,7 @@ import java.util.function.Consumer;
 		        // 1. 启动连接，并定义“如何接受”音频
 		        ttsService.connect(pcmData -> {
 		            // 这里是异步接受的回调
-		            System.out.println("异步回调：收到 8k PCM 数据，长度 " + pcmData.length);
+		            logger.debug("异步回调：收到 8k PCM 数据，长度 " + pcmData.length);
 		            // 对接播放器：AudioPlayer.play(pcmData);
 		        });
 

@@ -8,7 +8,10 @@ package com.asrtts;
 	import java.util.Base64;
 	import java.util.concurrent.CountDownLatch;
 	import java.util.concurrent.TimeUnit;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 	public class RealtimeTts {
+    private static final Logger logger = LogManager.getLogger(RealtimeTts.class);
 
 	    public static void main(String[] args) throws Exception {
 	        String apiKey = System.getenv("OPENAI_API_KEY");
@@ -38,7 +41,7 @@ package com.asrtts;
 
 	            @Override
 	            public void onOpen(WebSocket ws, Response resp) {
-	                System.out.println("WS opened");
+	                logger.debug("WS opened");
 
 	                // 1) session.update：声明这是 realtime 会话，并设置输出音频格式(PCMA) + voice
 	                // session.type = "realtime" 是必须字段之一（你之前报错 Missing session.type 就是这个）:contentReference[oaicite:3]{index=3}
@@ -112,10 +115,10 @@ package com.asrtts;
 	                // - response.output_audio.done: 音频结束:contentReference[oaicite:6]{index=6}
 
 	                String type = extractJsonString(textMsg, "type");
-	                System.out.println("type=" + type + " full=" + textMsg);
+	                logger.debug("type=" + type + " full=" + textMsg);
 	                if (type == null) {
 	                    // 不是我们能简单解析的 JSON，就直接打印
-	                    System.out.println(textMsg);
+	                    logger.debug(textMsg);
 	                    return;
 	                }
 
@@ -133,39 +136,39 @@ package com.asrtts;
 	                        File out = new File("realtime_tts_8k_pcma.wav");
 	                        writeWavG711Alaw(out, pcma, 8000, 1);
 
-	                        System.out.println("Saved: " + out.getAbsolutePath() + "  bytes=" + pcma.length);
+	                        logger.debug("Saved: " + out.getAbsolutePath() + "  bytes=" + pcma.length);
 	                    } catch (Exception e) {
-	                        e.printStackTrace();
+	                        logger.error("", e);
 	                    } finally {
 	                        done.countDown();
 	                        ws.close(1000, "bye");
 	                    }
 	                } else if ("error".equals(type)) {
-	                    System.err.println("Server error: " + textMsg);
+	                    logger.error("Server error: " + textMsg);
 	                    done.countDown();
 	                    ws.close(1000, "bye");
 	                } else {
 	                    // 你也可以把其它事件打印出来观察
-	                    // System.out.println(textMsg);
+	                    // logger.debug(textMsg);
 	                }
 	            }
 
 	            @Override
 	            public void onFailure(WebSocket ws, Throwable t, Response response) {
-	                System.err.println("WS failure: " + t.getMessage());
-	                t.printStackTrace();
+	                logger.error("WS failure: " + t.getMessage());
+	                logger.error("", t);
 	                done.countDown();
 	            }
 
 	            @Override
 	            public void onClosed(WebSocket ws, int code, String reason) {
-	                System.out.println("WS closed: " + code + " " + reason);
+	                logger.debug("WS closed: " + code + " " + reason);
 	            }
 	        });
 
 	        done.await(30, TimeUnit.SECONDS);
 	        client.dispatcher().executorService().shutdown();
-	        System.out.println("Done.");
+	        logger.debug("Done.");
 	    }
 
 	    // ----------------- 超轻量 JSON 字段提取（无额外依赖，够 demo 用） -----------------

@@ -6,8 +6,11 @@
     import com.lcallai.ChatSession;
     import com.lcallai.SearchService;
     import com.lcallai.SessionManager;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
     public class ChatVisaExample {
+    private static final Logger logger = LogManager.getLogger(ChatVisaExample.class);
 	    public static void main(String[] args) throws Exception {
 	        String clientId = "user_001";
 
@@ -109,35 +112,35 @@
                 String independentId = clientId + "_scenario_" + (s + 1);
                 ChatSession session = SessionManager.getSession(independentId);
 
-                System.out.println("##################################################");
-                System.out.println("🚩 正在执行：" + scenarioNames[s]);
-                System.out.println("##################################################                ");
+                logger.debug("##################################################");
+                logger.debug("🚩 正在执行：" + scenarioNames[s]);
+                logger.debug("##################################################                ");
 
                 // 使用 for 循环遍历每一个问题
                 for (int i = 0; i < userSteps.length; i++) {
                     String userQuery = userSteps[i];
 
-                    System.out.println("==================================================");
-                    System.out.println("👤 轮次 [" + (i + 1) + "] 提问: " + userQuery);
-                    System.out.println("⏳ 正在请求 AI 及其重写/检索链路...");
+                    logger.debug("==================================================");
+                    logger.debug("👤 轮次 [" + (i + 1) + "] 提问: " + userQuery);
+                    logger.debug("⏳ 正在请求 AI 及其重写/检索链路...");
                     // 1. 记录开始时间
                     long questionStart = System.currentTimeMillis();
                     // 核心调用：内部会经历 Rewrite -> Retrieve -> Generation
                     ChatAnswer answer = session.askByQueryMode(userQuery,true);
                     long totalDuration = System.currentTimeMillis() - questionStart;
-                    System.out.println("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
-                    System.out.println("⏱️ 该轮次总响应耗时: " + totalDuration + " ms");
-                    System.out.println("==================================================\n");
+                    logger.debug("💬 AI 回答 (状态码: " + answer.code + "): \n" + answer.answer);
+                    logger.debug(" 该轮次总响应耗时: " + totalDuration + " ms");
+                    logger.debug("==================================================\n");
 
                     // 可选：为了防止连续调用过快触发 OpenAI 的并发限流 (Rate Limit)，可以稍微停顿一下
                     try {
                         Thread.sleep(1500);
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        logger.error("", e);
                     }
                 }
 
-                System.out.println("✅ 测试执行完毕。");
+                logger.debug("✅ 测试执行完毕。");
             }
 	        // 如果你需要在这个 main 方法跑完后立刻退出 Java 进程，
 	        // 记得在这里调用之前我们在 SearchService 里加的关掉 HikariCP 连接池的方法。

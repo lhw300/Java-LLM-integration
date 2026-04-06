@@ -7,6 +7,8 @@
 	import java.util.concurrent.ConcurrentHashMap;
 	import java.util.concurrent.TimeUnit;
 
+    import org.apache.logging.log4j.LogManager;
+    import org.apache.logging.log4j.Logger;
 
     import com.fasterxml.jackson.databind.JsonNode;
 	import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +24,8 @@
     import com.lcallai.intent.*;
 
 	public class SessionManager {
+        private static final Logger logger = LogManager.getLogger(SessionManager.class);
+
         public static  String configPath="d:\\ai";
         private static String G_QUERY_MODE = "retrieveRerank";
 
@@ -84,6 +88,7 @@
  
 	 // 分别声明两个接口能力
      public static void init(String configPath) {
+         logger.debug("sessionmanager init ... ");
          // 先用路径初始化配置工具
          AiConfig.init(configPath);
 
@@ -96,7 +101,7 @@
 	    // 🌟 把它改成 public static，这样在 Main 方法里就能调用
 	    public static void init(String type,String configPath) {
             try {
-                System.out.println("📂 [System Init] 正在预加载全局配置文件和知识库...");
+                logger.debug("📂 [System Init] 正在预加载全局配置文件和知识库...");
                 SessionManager.configPath=configPath;
                 AiConfig.init(configPath); // 初始化配置工具
 
@@ -113,7 +118,7 @@
                 String globalClassifyPromptPath     = base + AiConfig.getStringConfig("path.prompt.classify", "/config/prompt_classify_v1.txt");
 
 
-                System.out.println("globalClassifyPromptPath "+globalClassifyPromptPath);
+                logger.debug("globalClassifyPromptPath "+globalClassifyPromptPath);
 
                 // Lucene 路径同样动态拼接
                // LUCENE_PATH = base + AiConfig.getStringConfig("path.lucene", "/lucene_index");
@@ -155,15 +160,15 @@
                 GLOBAL_QWEN_KEY = AiConfig.getStringConfig("api.key.qwen", System.getenv("QWEN_API_KEY"));
 
                 // 打印调试（生产环境可关闭）
-                System.out.println("DEBUG: 读取到的 QWEN_API_KEY 长度 = " +
+                logger.debug("DEBUG: 读取到的 QWEN_API_KEY 长度 = " +
                         (GLOBAL_QWEN_KEY != null ? GLOBAL_QWEN_KEY.length() : "null"));
 
                // String aliyunApiKey = AiConfig.getStringConfig("api.key.qwen", System.getenv("QWEN_API_KEY"));
               //  String openAiApiKey = AiConfig.getStringConfig("api.key.openai", System.getenv("OPENAI_API_KEY"));
 
 
-                SearchService.init(AiConfig.getStringConfig("storage.type","local"));
-                System.out.println("✅ [System Init] 全局资源加载完成。type="+type);
+                SearchService.init(AiConfig.getStringConfig("storage.type","_NULL_"));
+                logger.debug("✅ [System Init] 全局资源加载完成。type="+type);
 
                 if (type == null) {
                     throw new IllegalArgumentException("模型类型不能为空！");
@@ -174,7 +179,7 @@
 
 
                 if (type.equalsIgnoreCase("openai")) {
-                    System.out.println("⚙️ 系统正在初始化 OpenAI 客户端...");
+                    logger.debug("⚙️ 系统正在初始化 OpenAI 客户端...");
                     OpenAIClient client = new OpenAIClient(
                             System.getenv("OPENAI_API_KEY"),
                             "gpt-4o-mini",
@@ -200,13 +205,13 @@
                     ACTIVE_LLM = client;
                     ACTIVE_EMBED = client;
                     ACTIVE_TABLE = "enterprise_knowledge_1536";
-                    System.out.println("✅ OpenAI 模型客户端已挂载");
+                    logger.debug("✅ OpenAI 模型客户端已挂载");
 
                 } else if (type.equalsIgnoreCase("deepseek")) {
-                    System.out.println("⚙️ 暂未完全实现 DeepSeek...");
+                    logger.debug("⚙️ 暂未完全实现 DeepSeek...");
 
                 } else if (type.equalsIgnoreCase("ollama")) {
-                    System.out.println("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
+                    logger.debug("💻 系统正在初始化本地 Ollama (Qwen) 客户端...");
                     OllamaClient ollamaClient = new OllamaClient(
                             "http://192.168.1.23:11434/v1",
                             "qwen2.5:7b",
@@ -221,7 +226,7 @@
                     ACTIVE_TABLE = "enterprise_knowledge_768";
 
                 } else if (type.equalsIgnoreCase("qwen-online")) {
-                    System.out.println("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
+                    logger.debug("☁️ 正在初始化全链路阿里云百炼 (Qwen Online) — 模型路由模式...");
 
 
 
@@ -285,13 +290,13 @@
                     ACTIVE_EMBED = turboClient;  // embedding 由 turbo 负责
                     ACTIVE_TABLE = "enterprise_knowledge_qwen_1024";
 
-                    System.out.println("✅ Qwen 路由客户端已挂载：rewrite/rerank → turbo | finalAsk → plus");
-                    System.out.println("   请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
+                    logger.debug("✅ Qwen 路由客户端已挂载：rewrite/rerank → turbo | finalAsk → plus");
+                    logger.debug("   请确保 " + ACTIVE_TABLE + " 表已存放阿里版向量数据。");
 
                 } else if (type.equalsIgnoreCase("hybrid") || type.equalsIgnoreCase("混合模式")) {
                     // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
-                    System.out.println("🔄 正在初始化混合模式...");
-                    System.out.println("   架构: 本地 Ollama (rewrite/rerank) + 云端 Qwen-Plus (final)");
+                    logger.debug("🔄 正在初始化混合模式...");
+                    logger.debug("   架构: 本地 Ollama (rewrite/rerank) + 云端 Qwen-Plus (final)");
 
 
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -325,19 +330,19 @@
                     ACTIVE_EMBED = localClient;   // 使用本地 embed
                     ACTIVE_TABLE = "enterprise_knowledge_768"; // 本地向量维度
 
-                    System.out.println("✅ 混合模式已激活");
-                    System.out.println("   ├─ Rewrite:  本地 Ollama Qwen2.5:1.5b");
-                    System.out.println("   ├─ Rerank:   本地 Ollama Qwen2.5:1.5b");
-                    System.out.println("   ├─ Final:    云端 Qwen-Plus");
-                    System.out.println("   └─ Embed:    本地 nomic-embed-text (768维)");
-                    System.out.println("");
-                    System.out.println("💰 成本节省: ~40% (仅 final 调用云端)");
-                    System.out.println("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
+                    logger.debug("✅ 混合模式已激活");
+                    logger.debug("   ├─ Rewrite:  本地 Ollama Qwen2.5:1.5b");
+                    logger.debug("   ├─ Rerank:   本地 Ollama Qwen2.5:1.5b");
+                    logger.debug("   ├─ Final:    云端 Qwen-Plus");
+                    logger.debug("   └─ Embed:    本地 nomic-embed-text (768维)");
+                    logger.debug("");
+                    logger.debug("💰 成本节省: ~40% (仅 final 调用云端)");
+                    logger.debug("⚡ 延迟优化: ~50% (rewrite/rerank 本地执行)");
 
                 } else if (type.equalsIgnoreCase("hybrid2")) {
                     // ⭐⭐⭐ 新增：混合模式 ⭐⭐⭐
-                    System.out.println("🔄 正在初始化混合模式...");
-                   // System.out.println("   架构: 本地 qwenonline (rewrite/rerank) + 云端 Qwen-Plus (final)");
+                    logger.debug("🔄 正在初始化混合模式...");
+                   // logger.debug("   架构: 本地 qwenonline (rewrite/rerank) + 云端 Qwen-Plus (final)");
 
 
                     String aliyunBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -386,6 +391,7 @@
                     G_RESCUE_SCORE       = AiConfig.getDoubleConfig("rag.threshold.rescue_score", 0.60);
 
                     DJLLocalClient djlLocalClient= new DJLLocalClient();
+
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
                             aliyunBaseUrl,
@@ -415,12 +421,12 @@
                     ACTIVE_EMBED = djlLocalClient;
                     ACTIVE_TABLE = "enterprise_knowledge_1024"; // 本地向量维度
 
-                    System.out.println("✅ 混合模式已激活");
-                    System.out.println("   ├─ Rewrite:  云端 Qwen-turboClient");
-                    System.out.println("   ├─ Rerank:   DJLLocalClient");
-                    System.out.println("   ├─ Final:    云端 Qwen-Plus");
-                    System.out.println("   └─ Embed:    本地 DJLLocalClient");
-                    System.out.println("");
+                    logger.debug("✅ 混合模式已激活");
+                    logger.debug("   ├─ Rewrite:  云端 Qwen-turboClient");
+                    logger.debug("   ├─ Rerank:   DJLLocalClient");
+                    logger.debug("   ├─ Final:    云端 Qwen-Plus");
+                    logger.debug("   └─ Embed:    本地 DJLLocalClient");
+                    logger.debug("");
 
 
                 } else {
@@ -452,8 +458,8 @@
 
             } catch (Exception e) {
 
-                System.err.println("❌ [System Init] 初始化失败！");
-                e.printStackTrace();
+                logger.error("❌ [System Init] 初始化失败！");
+                logger.error("", e);
                 throw new RuntimeException("SessionManager 初始化失败", e);
             }
         }
@@ -513,7 +519,7 @@
 
                 session.setIntentPipeline(ACTIVE_INTENT_CLASSIFIER, ACTIVE_INTENT_DISPATCHER);
                 sessions.put(clientId, session);
-                System.out.println("🆕 为客户端 [" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
+                logger.debug("为客户端 [ sn=" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
             }
             return session;
         }
@@ -543,7 +549,7 @@
 	        }
 		*/
 	 
-	        System.out.println("final ask bodyJson:"+bodyJson);
+	        logger.debug("final ask bodyJson:"+bodyJson);
 	        // 调用优化版 SessionManagerOptimized
 	        return  sendToOpenAI_(bodyJson);
 	    }
@@ -563,7 +569,7 @@
         try (Response resp = CLIENT.newCall(request).execute()) {
             // ✅ 修复: 只读一次 body
             String raw = resp.body().string();
-            System.out.println("Response raw:"+raw);
+            logger.debug("Response raw:"+raw);
             if (!resp.isSuccessful()) {
                 // ✅ 使用已读取的 raw
                 throw new IOException("HTTP " + resp.code() + " body=" + raw);
@@ -600,7 +606,7 @@
         try (Response resp = CLIENT.newCall(request).execute()) {
             // ✅ 修复: 只读一次 body
             String raw = resp.body().string();
-            System.out.println("Response raw:"+raw);
+            logger.debug("Response raw:"+raw);
             if (!resp.isSuccessful()) {
                 // ✅ 使用已读取的 raw
                 throw new IOException("HTTP " + resp.code() + " body=" + raw);
@@ -631,25 +637,40 @@
          */
         public static void warmUp() {
             if (ACTIVE_ROUTER == null || ACTIVE_EMBED == null) {
-                System.out.println("⚠️ 预热失败：模型客户端尚未初始化。");
+                logger.debug("⚠️ 预热失败：模型客户端尚未初始化。");
                 return;
             }
-            System.out.println("⏳ 正在进行全链路预热 (rewriter + embed)...");
+            logger.debug("⏳ 正在进行全链路预热 (rewriter + embed)...");
             try {
                 long start=System.currentTimeMillis();
-                ACTIVE_ROUTER.rewriter().generate("system", "hi");
+                try {
+                    ACTIVE_ROUTER.rewriter().generate("system", "hi");
+                }catch (Exception e) {
+                    logger.error("⚠️ 预热rewriter过程中发生异常: " + e.getMessage());
+                }
                 // 改后
                 //ACTIVE_ROUTER.rerank("hi", "hi");
-                ACTIVE_ROUTER.rerank("北京", "北京是中国的首都");
+                try {
+                    ACTIVE_ROUTER.rerank("北京", "北京是中国的首都");
+                } catch (Exception e) {
+                        logger.error("⚠️ 预热rerank过程中发生异常: " + e.getMessage());
+                    }
+
+                try {
                 ACTIVE_ROUTER.finalLlm().generate("system", "hi");
-
+                } catch (Exception e) {
+                    logger.error("⚠️ 预热finalLlm过程中发生异常: " + e.getMessage());
+                }
+                try {
                 ACTIVE_EMBED.embed("hello");
+                } catch (Exception e) {
+                    logger.error("⚠️ 预热embed过程中发生异常: " + e.getMessage());
+                }
 
 
-
-                System.out.println("✅ 全链路连接池预热完成 t="+(System.currentTimeMillis()-start) );
+                logger.debug("✅ 全链路连接池预热完成 t="+(System.currentTimeMillis()-start) );
             } catch (Exception e) {
-                System.err.println("⚠️ 预热过程中发生异常: " + e.getMessage());
+                logger.error("⚠️ 预热过程中发生异常: " + e.getMessage());
             }
         }
 
@@ -661,7 +682,7 @@
                         newReranker,                  // 新的 rerank 客户端
                         ACTIVE_ROUTER.finalLlm()      // 保留原有 final
                 );
-                System.out.println("✅ Rerank 模型已切换");
+                logger.debug("✅ Rerank 模型已切换");
             }
         }
 
@@ -684,7 +705,7 @@
 
                 return content.trim();
             } catch (Exception e) {
-                System.err.println("⚠️ 警告：无法从 " + filePath + " 读取配置，将使用默认 Prompt。原因: " + e.getMessage());
+                logger.error("⚠️ 警告：无法从 " + filePath + " 读取配置，将使用默认 Prompt。原因: " + e.getMessage());
                 return defauts;
             }
         }
@@ -698,7 +719,7 @@
             try {
                 java.io.File file = new java.io.File(filePath);
                 if (!file.exists()) {
-                    System.err.println("❌ 知识库文件不存在: " + filePath);
+                    logger.error("❌ 知识库文件不存在: " + filePath);
                     return "";
                 }
 
@@ -714,14 +735,14 @@
                     content = content.substring(1);
                 }
 
-                System.out.println("📚 知识库加载成功: " + filePath + " (长度: " + content.length() + " 字符)");
+                logger.debug("📚 知识库加载成功: " + filePath + " (长度: " + content.length() + " 字符)");
                 return content.trim();
 
             } catch (java.io.IOException e) {
-                System.err.println("💥 加载知识库时发生 I/O 异常: " + e.getMessage());
+                logger.error("💥 加载知识库时发生 I/O 异常: " + e.getMessage());
                 return "";
             } catch (Exception e) {
-                System.err.println("💥 加载知识库时发生未知错误: " + e.getMessage());
+                logger.error("💥 加载知识库时发生未知错误: " + e.getMessage());
                 return "";
             }
         }
@@ -732,7 +753,7 @@
             ChatSession session = sessions.remove(clientId);
             if (session != null) {
                 session.close();
-                System.out.println("🗑️ 会话 [" + clientId + "] 已从管理器中移除。");
+                logger.debug("🗑️ 会话 [" + clientId + "] 已从管理器中移除。");
             }
         }
 
@@ -740,7 +761,7 @@
          * 释放所有会话（用于系统重启或内存告警时）
          */
         public static void clearAllSessions() {
-            System.out.println("🧹 正在清理所有历史会话...");
+            logger.debug("🧹 正在清理所有历史会话...");
             for (ChatSession session : sessions.values()) {
                 session.close();
             }
