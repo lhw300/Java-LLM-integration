@@ -28,10 +28,23 @@ public class InformHandler implements IntentHandler {
     };
 
     @Override
+
     public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
-        session.getQueryHistory().addMessage("Context", "[用户背景] " + rawText);
         logger.debug("[InformHandler] 已记录用户背景信息: " + rawText);
 
+        // 1. 更新 currentCategory（用 classify 已标准化的 category，不用 rawText）
+        if (result.category != null && !result.category.isBlank()) {
+            session.setCurrentCategory(result.category);
+        }
+
+        // 2. 检查是否有挂起的问题（classify 续答规则失败时的 fallback）
+        String pending = session.getPendingQuery();
+        if (pending != null) {
+            session.clearPendingQuery();
+            return session.askByQueryMode(pending, false);
+        }
+
+        // 3. 没有挂起问题，正常确认
         String reply = RESPONSES[new Random().nextInt(RESPONSES.length)];
         return new ChatAnswer(0, reply, result);
     }

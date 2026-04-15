@@ -63,7 +63,7 @@ public class IntentResult {
      * 非 COMMAND 时为 null
      */
     public final String    actionCode;
-
+    public final String    category;      // null = 身份未知
     // ── 构造 ─────────────────────────────────────────────────────────────
 
     private IntentResult(Builder b) {
@@ -72,6 +72,7 @@ public class IntentResult {
         this.sentiment    = b.sentiment;
         this.refinedQuery = b.refinedQuery;
         this.actionCode   = b.actionCode;
+        this.category     = b.category;  // ← 加这行
     }
 
     // ── 工具方法 ──────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ public class IntentResult {
                 ", sentiment=" + sentiment +
                 ", refinedQuery='" + refinedQuery + '\'' +
                 ", actionCode='" + actionCode + '\'' +
+                ", category='" + category + '\'' +
                 '}';
     }
 
@@ -105,6 +107,12 @@ public class IntentResult {
         private String    refinedQuery = "";
         private String    actionCode;
 
+        // Builder 里加
+        private String category;
+        public Builder category(String category) {
+            this.category = category;
+            return this;
+        }
         Builder(Intent intent) {
             this.intent = intent;
         }

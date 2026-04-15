@@ -101,7 +101,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         	// 直接解析成 JsonNode 并注入 root
         	//root.set("tools", mapper.readTree(toolsJson));
 
-        	 logger.debug("✅ 发送sendRequest..."+root.toString());
+        //	 logger.debug("✅ 发送sendRequest..."+root.toString());
         String res= sendRequest(baseUrl + "/chat/completions", root);
        // logger.debug("✅ 收到应答   res="+res);
         return res;

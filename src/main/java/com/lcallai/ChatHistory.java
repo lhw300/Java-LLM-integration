@@ -139,4 +139,16 @@ public class ChatHistory {
     public void clear() {
         messages.clear();
     }
+
+    public String toPlainText(int windowSize) {
+        StringBuilder sb = new StringBuilder();
+        int size = messages.size();
+        int start = Math.max(1, size - windowSize);
+        for (int i = start; i < size; i++) {
+            Message msg = messages.get(i);
+            if ("system".equalsIgnoreCase(msg.getRole())) continue;
+            sb.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n");
+        }
+        return sb.toString().trim();
+    }
 }

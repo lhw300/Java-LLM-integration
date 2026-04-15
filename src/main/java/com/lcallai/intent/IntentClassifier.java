@@ -3,7 +3,7 @@ package com.lcallai.intent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lcallai.LlmClient;
-import com.lcallai.QueryHistory;
+import com.lcallai.ChatHistory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -52,13 +52,15 @@ public class IntentClassifier {
      * @return 标准化的 IntentResult，解析失败时降级为 QUERY
      */
     // classify 里把 SYSTEM_PROMPT 换成 this.systemPrompt
-    public IntentResult classify(String userText, QueryHistory history) {
+    public IntentResult classify(String userText, ChatHistory  history) {
         try {
-            String historyCtx = history.getMessageWindowSize(HISTORY_WINDOW);
+            String historyCtx = history.toPlainText(HISTORY_WINDOW);
             String userPrompt = historyCtx == null || historyCtx.isBlank()
                     ? "用户输入：" + userText
                     : "对话历史：\n" + historyCtx + "\n\n用户最新输入：" + userText;
             logger.debug("[IntentClassifier] 原始输入: " + userPrompt);
+           // logger.debug("[IntentClassifier] systemPrompt: " + systemPrompt);
+
             String raw = llmClient.generate(this.systemPrompt, userPrompt); // 改这里
             logger.debug("[IntentClassifier] 原始输出: " + raw);
             return parse(raw, userText);
@@ -96,11 +98,14 @@ public class IntentClassifier {
             String refinedQuery = node.path("refined_query").asText(fallbackText);
             if (refinedQuery.isBlank()) refinedQuery = fallbackText;
 
+            String category = nullIfBlank(node.path("category").asText(null));
+
             return IntentResult.builder(intent)
                     .subIntent(nullIfBlank(node.path("sub_intent").asText(null)))
                     .sentiment(sentiment)
                     .refinedQuery(refinedQuery)
                     .actionCode(nullIfBlank(node.path("action_code").asText(null)))
+                    .category(category)  //
                     .build();
 
         } catch (Exception e) {

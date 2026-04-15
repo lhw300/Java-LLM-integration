@@ -52,10 +52,10 @@ public class CommandHandler implements IntentHandler {
                 return ChatAnswer.ofAction(result, ChatAnswer.Action.TRANSFER, "正在为您转接人工客服，请稍候。");
 
             case "ACTION_VOL_UP":
-                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_UP, null);
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_UP, "好的，大声点");
 
             case "ACTION_VOL_DOWN":
-                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_DOWN, null);
+                return ChatAnswer.ofAction(result, ChatAnswer.Action.VOL_DOWN, "好的，小声点");
 
             case "ACTION_HANGUP":
                 return ChatAnswer.ofAction(result, ChatAnswer.Action.HANGUP, "好的，再见！");

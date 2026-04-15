@@ -18,7 +18,7 @@
             logger.debug("🔥 进程内验证 QWEN_API_KEY: [" + System.getenv("QWEN_API_KEY") + "]");
             // 1. 设置默认路径
             String configPath = "e:\\ai";
-            if(1==1 ) System.exit(0);
+           // if(1==1 ) System.exit(0);
 
             // 2. 检查命令行是否传入了参数
             if (args.length > 0) {
@@ -102,7 +102,7 @@
 
             // 汇总所有场景进行回归测试
             String[][] allScenarios = {scenarioCorrect, scenarioInherit, scenarioRelation, scenarioBoundary};
-               allScenarios = new String[][] { scenarioBoundary };
+              // allScenarios = new String[][] { scenarioBoundary };
 
 
             String[] scenarioNamescn = {"场景 1：实体纠错", "场景 2：隐式继承", "场景 3：指代消解", "场景 4：负项边界"};

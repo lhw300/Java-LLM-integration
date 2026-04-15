@@ -22,8 +22,10 @@ public class QueryHandler implements IntentHandler {
     public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
         logger.debug("[QueryHandler] refinedQuery=" + result.refinedQuery);
 
-
-        // searchQuery 送检索，refinedQuery 记历史，ask3 内部跳过 performQueryRewrite
+        // category 为 null，直接把 refined_query（反问句）作为回答返回，不走 RAG
+        if (session.getCurrentCategory() == null) {
+            return new ChatAnswer(0, result.refinedQuery, result);
+        }
         return session.askByQueryMode(result.refinedQuery ,false);
     }
 }

@@ -395,7 +395,7 @@
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
                             aliyunBaseUrl,
-                            "qwen-turbo",          // 快速、低成本
+                            "qwen-turbo-2025-07-15",          // 快速、低成本
                             "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
                             CLIENT,
                             GLOBAL_QWEN_KEY
@@ -404,7 +404,7 @@
                     // ── 重量级客户端：负责 finalAsk ──────────────────────────────────
                     OllamaClient plusClient = new OllamaClient(
                             aliyunBaseUrl,
-                            "qwen-plus",           // 高质量回答
+                            "qwen-plus-2025-07-28",           // 高质量回答
                             "text-embedding-v3",   // 占位，实际 embed 由 turboClient 承担
                             CLIENT,
                             GLOBAL_QWEN_KEY

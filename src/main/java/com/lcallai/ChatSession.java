@@ -62,7 +62,9 @@ public class ChatSession {
     public IntentDispatcher intentDispatcher;
     private  String sessionId=""; // 用于 FeedbackHandler 追踪负面计数
     public IntentResult currentIntentResult;
-
+    private String currentCategory = null;
+    private String pendingQuery = null;
+    public String lastRawText=null;
 	private static final int MAX_HISTORY = 60;
 	private static final int MAX_QUERY_HISTORY = 16;
 	private static final int MAX_ASK_HISTORY = 40;
@@ -104,7 +106,7 @@ public class ChatSession {
 
 
 	private ChatHistory history = new ChatHistory(MAX_ASK_HISTORY);
-	public QueryHistory queryHistory = new QueryHistory();
+//	public QueryHistory queryHistory = new QueryHistory();
 	private String systemMessage = "";
 	ChatAnswer ca = new ChatAnswer(-1,null);
 	// 🌟 核心：引入抽象的大模型客户端，而不是写死的 SessionManager 调用
@@ -159,7 +161,7 @@ public class ChatSession {
     }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId){this.sessionId=sessionId;}
-    public QueryHistory getQueryHistory() { return queryHistory; }
+   // public QueryHistory getQueryHistory() { return queryHistory; }
 
     public void setIntentPipeline(IntentClassifier classifier, IntentDispatcher dispatcher) {
         this.intentClassifier = classifier;
@@ -219,124 +221,6 @@ public class ChatSession {
 		history.trim(MAX_HISTORY);
 		// trimHistory();
 	}
-	public ChatAnswer askOLD(String text) {
-	    logger.debug(sinfo+"✅ Agent-mode ask AI (Function Calling)...");
-	    if (text == null || text.isEmpty()) {
-	        ca.code = -1; ca.answer = "客户问题为空"; return ca;
-	    }
-	    if (text.length() > MAX_MESSAGE_LENGTH) text = text.substring(0, MAX_MESSAGE_LENGTH);
-
-	    try {
-	        // --- 步骤 1: Rewrite (重写用户意图) ---
-	        String optimizedQuery = text;
-	        String historyContextStr = queryHistory.getMessageWindowSize(MAX_QUERY_HISTORY);
-	        if (!historyContextStr.trim().isEmpty() && rewrite_prompt != null) {
-	            logger.debug(sinfo+"🔄 正在重写用户查询...");
-	            String userPrompt = "Conversation History:\n(" + historyContextStr + ")\n\nCurrent Question: (" + text + ")";
-                String rewritten = router.rewriter().generate(rewrite_prompt, userPrompt);
-	            if (rewritten != null && !rewritten.isEmpty()) {
-	            	optimizedQuery = rewritten;
-	            }
-	            logger.debug(sinfo+"🔄 正在重写结果:"+optimizedQuery);
-	        }
-
-	        // --- 步骤 2: 意图判定 (第一次调用 AI) ---
-	        // 此时 history 中存入优化后的问题
-	        history.addMessage("user", optimizedQuery);
-	        
-	        logger.debug(sinfo+"✅ 发送意图判定请求 (带 Tools 定义)...");
-	        // llmClient.chat 内部会注入 tools 定义
-            String firstResponse = router.finalLlm().chat(history.toJsonArray());
-	        if (firstResponse.startsWith("TOOL_CALL:")) {
-	            String jsonStr = firstResponse.substring(10);
-	            JsonNode toolCallNode = MAPPER.readTree(jsonStr);
-	            String callId = toolCallNode.path("id").asText(); // 获取 call_id
-	            
-	            Map<String, String> args = parseArgsFromAiResponse(firstResponse);
-	            String country = args.get("country");
-	            String citizenship = args.get("citizenship");
-	            if(!country.isEmpty() ){
-	            	
-	            	// 🌟 核心改进：执行多维度检索
-	            	// 🌟 改进 2：使用 LinkedHashSet 保证条目唯一性且保留插入顺序
-	                Set<SearchService.KnowledgeItem> uniqueItems = new LinkedHashSet<>();
-	                
-	                // 1. 查目的地的通用政策（如 144小时免签）
-	                uniqueItems.addAll(SearchService.getRelevantKnowledge(tableName, country, embeddingClient));
-	                
-	                // 2. 如果有国籍，查针对该国籍的特殊政策（如 15天单方面免签）
-	                if (!citizenship.isEmpty()) {
-	                    logger.debug(sinfo+"🔍 正在追加国籍检索: " + citizenship);
-	                    uniqueItems.addAll(SearchService.getRelevantKnowledge(tableName, citizenship, embeddingClient));
-	                }
-	                
-	                
-	             // 🌟 改进 3：将 Set 转回 List 并按相似度距离排序 (确保最相关的在前)
-	                List<SearchService.KnowledgeItem> sortedItems = new ArrayList<>(uniqueItems);
-	                sortedItems.sort(Comparator.comparingDouble(item -> item.distance));
-
-	                // 🌟 改进 4：拼接前 N 条内容 (防止上下文爆炸，例如取 Top 5)
-	                StringBuilder contextSb = new StringBuilder();
-	                int limit = Math.min(5, sortedItems.size()); 
-	                for (int i = 0; i < limit; i++) {
-	                    contextSb.append(sortedItems.get(i).content).append("\n");
-	                }
-	                String toolKnowledge = sortedItems.isEmpty() ? "抱歉，知识库中没有查到关于 " + country + " 的政策。" : contextSb.toString();
-	                // 3. 构造完整消息链反馈给 AI
-	                // 必须包含：User 问题 -> Assistant(TOOL_CALL) -> Tool(执行结果)
-	                ArrayNode conversationContext = history.toJsonArray();
-	                
-	                // 添加 AI 刚才发出的 Tool Call 指令 (这一步非常重要，否则 context 不完整)
-	                ObjectNode assistantMsg = MAPPER.createObjectNode();
-	                assistantMsg.put("role", "assistant");
-	                assistantMsg.set("tool_calls", MAPPER.createArrayNode().add(toolCallNode));
-	                conversationContext.add(assistantMsg);
-
-	                // 添加 Tool 的执行结果反馈
-	                ObjectNode toolResultMsg = MAPPER.createObjectNode();
-	                toolResultMsg.put("role", "tool");
-	                toolResultMsg.put("tool_call_id", callId);
-	                toolResultMsg.put("content", toolKnowledge);
-	                logger.debug(sinfo+"最终contenct : " + toolKnowledge); 
-	                conversationContext.add(toolResultMsg);
-
-	                // 4. 第二次调用 AI：生成最终的人类语言回答
-	                logger.debug(sinfo+"💬 AI 正在根据工具结果生成最终回复...");
-                    String finalAnswer = router.finalLlm().chat(conversationContext);
-	                
-	                // 更新记录
-	                queryHistory.addMessage("User", text);
-	                queryHistory.addMessage("Context", sortedItems.isEmpty() ? "无检索结果" :  contextSb.toString());
-	                
-	                ca.answer = finalAnswer;
-	            	
-	            } else {
-	                ca.answer = "提取参数失败，请明确您要查询的国家。";
-	            }
-	           
-	       
-	        	
-	        } else {
-	            // 如果 AI 没有调用工具，直接作为普通回答
-	            ca.answer = firstResponse;
-	            queryHistory.addMessage("User", text);
-	            queryHistory.addMessage("Context", "【通用对话】");
-	        }
-
-	        // --- 步骤 4: 结果存档 ---
-	        if (ca.answer != null && !ca.answer.isEmpty()) {
-	            history.addMessage("assistant", ca.answer);
-	            history.trim(MAX_HISTORY);
-	        }
-	        ca.code = 0;
-	        return ca;
-
-	    } catch (Exception e) {
-	        logger.error("", e);
-	        ca.code = -1; ca.answer = "机器人系统故障: " + e.getMessage();
-	        return ca;
-	    }
-	}
 
  
 	private Map<String, String> parseArgsFromAiResponse(String answer) {
@@ -361,7 +245,7 @@ public class ChatSession {
     private ChatAnswer handleEmptyResult(String text, ChatAnswer ca) {
         ca.code = -100;
         ca.answer = "知识库中没有找到任何内容";
-        ca.intentResult = this.currentIntentResult;
+        //ca.intentResult = this.currentIntentResult;
         recordHistory(text, "【未匹配到相关知识】", "抱歉，知识库中没有找到任何内容。");
         return ca;
     }
@@ -372,16 +256,14 @@ public class ChatSession {
     private ChatAnswer handleLowSimilarity(String text, ChatAnswer ca) {
         ca.code = -101;
         ca.answer = "抱歉，我在知识库中未找到与您问题完全相关的信息。";
-        ca.intentResult = this.currentIntentResult;
+       // ca.intentResult = this.currentIntentResult;
         // 即使失败，也要在 queryHistory 中记录一次，保持上下文连贯
-        queryHistory.addMessage("User", text);
-        queryHistory.addMessage("Context", "【未匹配到相关知识】");
-        queryHistory.trim(MAX_QUERY_HISTORY);
+
 
         // 🌟 关键修复：记录到正式对话历史（用于发给 AI）
-        history.addMessage("user", text);
-        history.addMessage("assistant", ca.answer);
-        history.trim(MAX_HISTORY);
+      //  history.addMessage("user", text);
+     //   history.addMessage("assistant", ca.answer);
+     //   history.trim(MAX_HISTORY);
 
         return ca;
     }
@@ -390,12 +272,10 @@ public class ChatSession {
      * 统一记录历史记录
      */
     private void recordHistory(String userText, String contextText, String assistantText) {
-        queryHistory.addMessage("User", userText);
-        queryHistory.addMessage("Context", contextText);
-        queryHistory.trim(MAX_HISTORY);
-        history.addMessage("user", userText);
-        history.addMessage("assistant", assistantText);
-        history.trim(MAX_HISTORY);
+
+   //     history.addMessage("user", userText);
+     //   history.addMessage("assistant", assistantText);
+     //   history.trim(MAX_HISTORY);
     }
 
      /**
@@ -421,24 +301,57 @@ public class ChatSession {
             return new ChatAnswer(-1, "输入为空");
         }
         long t0 = System.currentTimeMillis();
-        IntentResult intentResult = intentClassifier.classify(text, queryHistory);
+        IntentResult intentResult = intentClassifier.classify(text, history);
         long t1 = System.currentTimeMillis();
         logger.debug(sinfo+" [1] 意图分类耗时: " + (t1 - t0) + " ms  intent=" + intentResult.intent);
 
+        // category 不为 null 时才更新，null 表示本轮识别不到，保留上一轮的
+// classify 之后
+        if (intentResult.intent == IntentResult.Intent.QUERY
+                && intentResult.category == null) {
+            this.pendingQuery = intentResult.refinedQuery; // 身份未知时挂起
+        } else if (intentResult.category != null) {
+            this.currentCategory = intentResult.category; // 正常更新
+            this.pendingQuery = null; // 身份明确后清空挂起
+        }
+
         this.currentIntentResult = intentResult;
+        this.lastRawText = text;
         logger.debug(sinfo+"[intentResult]= " + intentResult);
         logger.debug(sinfo+"[Intent] " + intentResult.intent + " | Refined: " + intentResult.refinedQuery);
+
+
+// 如果 refinedQuery 和原始输入不同，合并成一条
+        String userMsg = (intentResult.refinedQuery != null
+                && !intentResult.refinedQuery.isBlank()
+                && !intentResult.refinedQuery.equals(text))
+                ? text + "\n" + intentResult.refinedQuery
+                : text;
+
+        history.addMessage("user", userMsg);
+        history.trim(MAX_HISTORY);
+
+
+
+
         // 派发器会根据 Intent 自动选择 QueryHandler, FeedbackHandler 等
         //if its queryHandler, it will invoke ask_by_query_mode
         ChatAnswer ca =intentDispatcher.dispatch(text, intentResult, this);
+        ca.intentResult=currentIntentResult;
         long t2 = System.currentTimeMillis();
         logger.debug(sinfo+" [2] Handler执行耗时: " + (t2 - t1) + " ms");
         logger.debug(sinfo+" [总] ask()全链路耗时: " + (t2 - t0) + " ms");
+        // ── 统一存入 assistant 回答 ──────────────────────────────────
+        if (ca.answer != null && !ca.answer.isBlank()) {
+            history.addMessage("assistant", ca.answer);
+            history.trim(MAX_HISTORY);
+        }
         return ca;
     }
 
     public ChatAnswer askByQueryMode(String text,boolean isrewrite) {
         if("fullText".equalsIgnoreCase(queryMode)){
+
             return askFullContext(text,isrewrite);
         }else //"retrieveOnly".equalsIgnoreCase(queryMode)   or   retrieveRerank
             return askRerank(text,isrewrite);
@@ -472,7 +385,7 @@ public class ChatSession {
         try {
             long requeryStart=System.currentTimeMillis();
             String optimizedQuery =processedText;
-            if(isrewrite) {
+            if(isrewrite) { //performQueryRewrite 已经是死代码了。全部classifer做rewrite
                 // 步骤 1: Rewrite - 结合历史上下文生成优化查询
                   optimizedQuery = performQueryRewrite(processedText);
             }
@@ -497,10 +410,14 @@ public class ChatSession {
 
             // 🌟 5. 核心：执行封装好的动作
             // 记录摘要历史（用于下一轮重写）
-            recordQueryHistory(processedText, finalItems);
+          //  recordQueryHistory(processedText, finalItems);
             logger.debug(sinfo+"executeFinalChat fullCtx: " + fullCtx.toString());
             // 执行 AI 生成答案（用于当前回答）
-            String ans = executeFinalChat(fullCtx.toString(), optimizedQuery);
+
+            String combinedInput = (lastRawText != null && !lastRawText.equals(optimizedQuery))
+                    ? lastRawText + "\n" + optimizedQuery
+                    : optimizedQuery;
+            String ans = executeFinalChat(fullCtx.toString(), combinedInput);
             if(ans!=null) {
                 ca.answer = ans;
                 ca.code = 0;
@@ -518,7 +435,7 @@ public class ChatSession {
     }
     //查询重写逻辑 (Rewrite)
     private String performQueryRewrite(String text) throws Exception {
-        String historyContextStr = queryHistory.getMessageWindowSize(MAX_QUERY_HISTORY);
+        String historyContextStr = history.toPlainText(MAX_QUERY_HISTORY);
         if (historyContextStr.trim().isEmpty() || rewrite_prompt == null) return text;
 
 
@@ -747,7 +664,7 @@ public class ChatSession {
      * 动作 1：记录重写历史 (仅限 queryHistory)
      */
 // 确认你的 recordQueryHistory 是这样的：
-    private void recordQueryHistory(String rawText, List<SearchService.KnowledgeItem> items) {
+    private void recordQueryHistory_nouse(String rawText, List<SearchService.KnowledgeItem> items) {
         StringBuilder sumCtx = new StringBuilder();
         for (SearchService.KnowledgeItem item : items) {
             if (item.summary != null && !item.summary.isEmpty()) {
@@ -755,9 +672,9 @@ public class ChatSession {
                 sumCtx.append("【").append(item.summary).append("】 ");
             }
         }
-        queryHistory.addMessage("User", rawText);
-        queryHistory.addMessage("Context", sumCtx.toString().trim());
-        queryHistory.trim(MAX_QUERY_HISTORY);
+        history.addMessage("user", rawText);
+        history.addMessage("user", "【检索摘要】" + sumCtx.toString().trim());
+        history.trim(MAX_QUERY_HISTORY);
     }
     public String executeChitchat(String chitchatIdentity, String query) throws Exception {
         // 1. 设置极简系统提示词（不带业务知识库，只带身份定义）
@@ -766,8 +683,8 @@ public class ChatSession {
         history.addMessage("system", systemMessage);
 
         // 2. 正常加入当前问题
-        history.addMessage("user", query);
-        history.trim(MAX_HISTORY);
+    //    history.addMessage("user", query);
+    //    history.trim(MAX_HISTORY);
 
         // 3. 直接调用 LLM，不经过 SearchService 检索
         long chatStart = System.currentTimeMillis();
@@ -776,10 +693,8 @@ public class ChatSession {
 
         // 4. 存档回复
         if (answer != null && !answer.isEmpty()) {
-            history.addMessage("assistant", answer);
-            // 记录到 queryHistory 保证下一轮重写知道刚才聊了什么
-            queryHistory.addMessage("User", query);
-            queryHistory.addMessage("Context", "【轻量闲聊】");
+            //history.addMessage("assistant", answer);
+
         }
         return answer;
     }
@@ -790,27 +705,29 @@ public class ChatSession {
 
         // 1. 设置系统提示词（注入全文知识）
         setSystemMessage(fullContext);
-        history.addMessage("user", optimizedQuery);
-        history.trim(MAX_HISTORY);
+     //   history.addMessage("user", optimizedQuery);
+      //  history.trim(MAX_HISTORY);
 
         // 2. 调用 LLM
         long chatStart = System.currentTimeMillis();
 // 在发送请求前获取 json 字符串
         String jsonPayload = history.toJsonArray().toString();
-        logger.debug(sinfo+"⚡ Context 长度: " + jsonPayload.length() + " chars");
-
+        logger.debug(sinfo+"finalAsk Context 长度: " + jsonPayload.length() + " chars");
+        logger.debug(jsonPayload);
 // 执行 chat
         String answer = router.finalLlm().chat(history.toJsonArray());
-        logger.debug(sinfo+" 最终答案生成耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
+        logger.debug(sinfo+" finalAsk 耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
+        logger.debug(sinfo+" AI应答："+answer);
+
 
         // 3. 安全截断并存入对话历史 (history)
-        if (answer != null && !answer.isEmpty()) {
+       /* if (answer != null && !answer.isEmpty()) {
             if (answer.length() > MAX_MESSAGE_LENGTH) {
                 answer = answer.substring(0, MAX_MESSAGE_LENGTH);
             }
             history.addMessage("assistant", answer);
             history.trim(MAX_HISTORY);
-        }
+        }*/
         return answer;
     }
 
@@ -1108,15 +1025,19 @@ public class ChatSession {
                 return ca;
             }
 
-            // 4. 步骤 3: 记录轻量化历史 (仅限 queryHistory)
-            // 关键：不使用 recordQueryHistory(processedText, finalItems)，防止历史记录膨胀
-            queryHistory.addMessage("User", processedText);
-            queryHistory.addMessage("Context", "【全量知识库模式】");
-            queryHistory.trim(MAX_QUERY_HISTORY);
+            String filteredContext = filterKnowledgeByCategory(fulltext, currentCategory);
+
+
             long chatStart = System.currentTimeMillis();
             // 5. 步骤 4: 执行最终对话并生成答案
             // 注入 fullKnowledge 到 System Message，并发送优化后的问题
-            String ans = executeFinalChat(fulltext, optimizedQuery);
+            String combinedInput = (lastRawText != null && !lastRawText.equals(optimizedQuery))
+                    ? lastRawText + "\n" + optimizedQuery
+                    : optimizedQuery;
+
+
+
+            String ans = executeFinalChat(filteredContext, "");
             long chatDuration = System.currentTimeMillis() - chatStart;
 
            logger.debug(sinfo+" [Step 2] AI executeFinalChat 生成答案耗时: " + chatDuration + " ms");
@@ -1190,9 +1111,7 @@ public class ChatSession {
             // 如果你的 ChatHistory 类没有 clear() 方法，可以直接 new 一个新的或者置空
             this.history = null;
         }
-        if (this.queryHistory != null) {
-            this.queryHistory = null;
-        }
+
 
         // 2. 切断对大文本的引用
         this.fulltext = null;
@@ -1208,10 +1127,14 @@ public class ChatSession {
         return sinfo;
 
     }
+    public ChatHistory getHistory() {
+        return history;
+    }
     public void setCRID(String crid){
         logger.debug(sinfo()+" crid="+crid);
         this.crid=crid;
     }
+    public String getCurrentCategory() { return currentCategory; }
     // 💡 针对静态线程池的全局关闭方法（在应用停机时调用）
     public static void shutdownExecutor() {
         if (rerankExecutor != null && !rerankExecutor.isShutdown()) {
@@ -1226,4 +1149,15 @@ public class ChatSession {
             }
         }
     }
+    //按 category 过滤知识库
+    private String filterKnowledgeByCategory(String fulltext, String category) {
+        if (category == null || category.isBlank()) return fulltext;
+        return Arrays.stream(fulltext.split("\n"))
+                .filter(line -> line.contains("||" + category + "||"))
+                .collect(Collectors.joining("\n"));
+    }
+    public void setPendingQuery(String query) { this.pendingQuery = query; }
+    public String getPendingQuery() { return pendingQuery; }
+    public void clearPendingQuery() { this.pendingQuery = null; }
+    public void setCurrentCategory(String category) { this.currentCategory = category; }
 }
