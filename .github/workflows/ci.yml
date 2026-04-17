@@ -30,15 +30,15 @@ jobs:
 
       - name: Remove local-copy antrun plugin
         run: |
-        python3 - <<'EOF'
-        import re, pathlib
-        p = pathlib.Path('pom.xml')
-        content = p.read_text()
-        content = re.sub(
-          r'\s*<plugin>[\s\S]*?maven-antrun-plugin[\s\S]*?</plugin>',
-          '', content)
-        p.write_text(content)
-        EOF
+          python3 - <<'EOF'
+          import re, pathlib
+          p = pathlib.Path('pom.xml')
+          content = p.read_text()
+          content = re.sub(
+            r'\s*<plugin>[\s\S]*?maven-antrun-plugin[\s\S]*?</plugin>',
+            '', content)
+          p.write_text(content)
+          EOF
 
       - name: Build fat jar
         run: mvn -B package -DskipTests
