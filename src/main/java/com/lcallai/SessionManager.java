@@ -395,7 +395,7 @@
                     // ── 轻量级客户端：负责 rewrite + rerank ──────────────────────────
                     OllamaClient turboClient = new OllamaClient(
                             aliyunBaseUrl,
-                            "qwen-turbo-2025-07-15",          // 快速、低成本
+                            "qwen-plus-2025-07-28",          // 快速、低成本
                             "text-embedding-v3",   // embed 模型（turboClient 兼任 embedding）
                             CLIENT,
                             GLOBAL_QWEN_KEY
@@ -636,6 +636,10 @@
          * 全链路预热：分别触发 rewrite 路径（turbo）和 embed 路径，建立连接池。
          */
         public static void warmUp() {
+            if (!"true".equalsIgnoreCase(AiConfig.getStringConfig("system.warmup.enabled", "true"))) {
+                logger.debug("skip warmup: system.warmup.enabled=false");
+                return;
+            }
             if (ACTIVE_ROUTER == null || ACTIVE_EMBED == null) {
                 logger.debug("⚠️ 预热失败：模型客户端尚未初始化。");
                 return;

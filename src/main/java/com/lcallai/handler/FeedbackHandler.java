@@ -29,7 +29,7 @@ public class FeedbackHandler implements IntentHandler {
     private final int transferThreshold;
 
     public FeedbackHandler() {
-        this(2);
+        this(4);
     }
 
     public FeedbackHandler(int transferThreshold) {

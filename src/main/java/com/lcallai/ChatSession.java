@@ -20,7 +20,7 @@ import com.lcallai.handler.*;
 import com.lcallai.intent.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
+import java.util.stream.Collectors;
 
 /*
  * 1. ask() 函数：智能 Agent (Function Calling) 模式
@@ -309,10 +309,11 @@ public class ChatSession {
 // classify 之后
         if (intentResult.intent == IntentResult.Intent.QUERY
                 && intentResult.category == null) {
-            this.pendingQuery = intentResult.refinedQuery; // 身份未知时挂起
-        } else if (intentResult.category != null) {
+            //this.pendingQuery = intentResult.refinedQuery; // 身份未知时挂起
+            this.pendingQuery = text;
+        } else if (intentResult.category != null) { //可能是inform产生category
             this.currentCategory = intentResult.category; // 正常更新
-            this.pendingQuery = null; // 身份明确后清空挂起
+          //  this.pendingQuery = null; // 身份明确后清空挂起
         }
 
         this.currentIntentResult = intentResult;
@@ -324,7 +325,7 @@ public class ChatSession {
 // 如果 refinedQuery 和原始输入不同，合并成一条
         String userMsg = (intentResult.refinedQuery != null
                 && !intentResult.refinedQuery.isBlank()
-                && !intentResult.refinedQuery.equals(text))
+                && similarity(text, intentResult.refinedQuery) < 0.9)
                 ? text + "\n" + intentResult.refinedQuery
                 : text;
 
@@ -414,10 +415,10 @@ public class ChatSession {
             logger.debug(sinfo+"executeFinalChat fullCtx: " + fullCtx.toString());
             // 执行 AI 生成答案（用于当前回答）
 
-            String combinedInput = (lastRawText != null && !lastRawText.equals(optimizedQuery))
+/*            String combinedInput = (lastRawText != null && !lastRawText.equals(optimizedQuery))
                     ? lastRawText + "\n" + optimizedQuery
-                    : optimizedQuery;
-            String ans = executeFinalChat(fullCtx.toString(), combinedInput);
+                    : optimizedQuery;*/
+            String ans = executeFinalChat(fullCtx.toString(), "");
             if(ans!=null) {
                 ca.answer = ans;
                 ca.code = 0;
@@ -713,7 +714,12 @@ public class ChatSession {
 // 在发送请求前获取 json 字符串
         String jsonPayload = history.toJsonArray().toString();
         logger.debug(sinfo+"finalAsk Context 长度: " + jsonPayload.length() + " chars");
-        logger.debug(jsonPayload);
+        //logger.debug(jsonPayload);
+        // pretty print
+        ObjectMapper mapper = new ObjectMapper();
+        logger.debug(mapper.writerWithDefaultPrettyPrinter()
+                .writeValueAsString(history.toJsonArray()));
+
 // 执行 chat
         String answer = router.finalLlm().chat(history.toJsonArray());
         logger.debug(sinfo+" finalAsk 耗时: " + (System.currentTimeMillis() - chatStart) + " ms");
@@ -1026,14 +1032,20 @@ public class ChatSession {
             }
 
             String filteredContext = filterKnowledgeByCategory(fulltext, currentCategory);
-
+            if (filteredContext == null || filteredContext.isBlank()) {
+                ca.code = 0;
+                ca.answer = "抱歉，我这暂时没有查询到您身份相关的业务说明，请您提供更多信息。";
+                return ca;
+            }
 
             long chatStart = System.currentTimeMillis();
             // 5. 步骤 4: 执行最终对话并生成答案
             // 注入 fullKnowledge 到 System Message，并发送优化后的问题
+/*
             String combinedInput = (lastRawText != null && !lastRawText.equals(optimizedQuery))
                     ? lastRawText + "\n" + optimizedQuery
                     : optimizedQuery;
+*/
 
 
 
@@ -1149,9 +1161,25 @@ public class ChatSession {
             }
         }
     }
+    //2个字符串相似度
+    private double similarity(String a, String b) {
+        if (a == null || b == null) return 0.0;
+        // 去掉标点空格后比较
+        String ca = a.replaceAll("[\\pP\\s]", "");
+        String cb = b.replaceAll("[\\pP\\s]", "");
+        if (ca.isEmpty() && cb.isEmpty()) return 1.0;
+        if (ca.isEmpty() || cb.isEmpty()) return 0.0;
+        // 用较长字符串中相同字符的比例
+        int common = 0;
+        for (char c : ca.toCharArray()) {
+            if (cb.contains(String.valueOf(c))) common++;
+        }
+        return (double) common / Math.max(ca.length(), cb.length());
+    }
+
     //按 category 过滤知识库
     private String filterKnowledgeByCategory(String fulltext, String category) {
-        if (category == null || category.isBlank()) return fulltext;
+        if (category == null || category.isBlank()) return "";
         return Arrays.stream(fulltext.split("\n"))
                 .filter(line -> line.contains("||" + category + "||"))
                 .collect(Collectors.joining("\n"));

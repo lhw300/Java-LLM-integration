@@ -120,7 +120,8 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         messages.addObject().put("role", "user").put("content", userPrompt);
         ObjectNode root = mapper.createObjectNode();
         root.put("model", this.chatModel);
-        root.put("temperature", 0.0);
+        root.put("temperature", 0.0); //OpenAI 规范中 temp=0 时若 top_p<1.0，
+        root.put("top_p", 1.0);  // 🔒 锁定确定性，防后端默认值干扰 部分后端仍会触发采样截断。显式设 1.0 可 100% 关闭随机性
         root.set("messages", messages);
         // 这里调用底层的发送，不走带 tools 的 chat 方法
         return sendRequest(baseUrl + "/chat/completions", root);
