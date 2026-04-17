@@ -35,10 +35,16 @@ jobs:
           p = pathlib.Path('pom.xml')
           content = p.read_text()
           content = re.sub(
-            r'\s*<plugin>[\s\S]*?maven-antrun-plugin[\s\S]*?</plugin>',
-            '', content)
+          r'\s*<plugin>(?:(?!</plugin>)[\s\S])*?maven-antrun-plugin[\s\S]*?</plugin>',
+          '', content)
           p.write_text(content)
+          print("剩余plugins:")
+          import re as r2
+          for m in r2.finditer(r'<artifactId>(.*?)</artifactId>', content):
+            print(" ", m.group(1))
           EOF
+      - name: Show pom after edit
+        run: cat pom.xml | grep -A2 'artifactId'
 
       - name: Build fat jar
         run: mvn -B package -DskipTests
