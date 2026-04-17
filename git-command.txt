@@ -11,9 +11,17 @@ git archive --format=zip -o /c/tmp/version_export.zip abc1234
 
 运行 git status：你会看到文件变红了。
 
-运行 git add .：文件变绿了（进了暂存区）。
+ git add .    
 
-运行 git commit -m "test: 练习一次提交"。
+ git commit -m "add log4j"
+
+
+git push -u origin main
+
+
+
+git config --global alias.lazy "!git add -A && git commit -m 'quick update' && git push"
+
 
 运行 git log --oneline：看看你的存档点是不是多了一个。
 
