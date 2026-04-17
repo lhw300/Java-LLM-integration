@@ -47,7 +47,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lcallai-jar
-          path: target/lcallai-1.0.jar
+          path: |
+            target/lcallai-1.0.jar
+            target/lcallai-1.0-lib.jar
 
   # ============================================================
   # Job 2：意图分类测试（对应 ChatIntentExample）
@@ -82,7 +84,7 @@ jobs:
 
       - name: Run IntentTestRunner
         run: |
-          java -cp target/lcallai-1.0.jar \
+          java -cp "target/lcallai-1.0.jar:target/lcallai-1.0-lib.jar" \
                com.lcallai.IntentTestRunner \
                ${{ github.workspace }}/ci-config
 
@@ -119,6 +121,6 @@ jobs:
 
       - name: Run RagTestRunner
         run: |
-          java -cp target/lcallai-1.0.jar \
+          java -cp "target/lcallai-1.0.jar:target/lcallai-1.0-lib.jar" \
                com.lcallai.RagTestRunner \
                ${{ github.workspace }}/ci-config
