@@ -47,9 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lcallai-jar
-          path: |
-            target/lcallai-1.0.jar
-            target/lcallai-1.0-lib.jar
+          path: target/*.jar
 
   # ============================================================
   # Job 2：意图分类测试（对应 ChatIntentExample）
