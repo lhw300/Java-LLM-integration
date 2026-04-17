@@ -163,6 +163,49 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
 
     private String sendRequest(String url, ObjectNode bodyNode) throws Exception {
         String bodyJson = mapper.writeValueAsString(bodyNode);
+
+        int maxRetry = 3;
+        for (int attempt = 1; attempt <= maxRetry; attempt++) {
+            RequestBody body = RequestBody.create(bodyJson, MediaType.parse("application/json; charset=utf-8"));
+            Request.Builder requestBuilder = new Request.Builder()
+                    .url(url)
+                    .post(body);
+
+            if (this.apiKey != null && !this.apiKey.trim().isEmpty()) {
+                requestBuilder.addHeader("Authorization", "Bearer " + this.apiKey);
+            }
+
+            try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+                String raw = response.body().string();
+
+                // 429 限流：等待后重试
+                if (response.code() == 429) {
+                    int waitSec = attempt * 3;
+                    System.out.println("⚠️ 429 限流，等待 " + waitSec + "s 后重试 (" + attempt + "/" + maxRetry + ")");
+                    Thread.sleep(waitSec * 1000L);
+                    continue;
+                }
+
+                if (!response.isSuccessful()) {
+                    throw new RuntimeException("API Error: " + response.code() + " - " + raw);
+                }
+
+                JsonNode root = mapper.readTree(raw);
+                if (root.has("choices")) {
+                    JsonNode message = root.path("choices").get(0).path("message");
+                    if (message.has("tool_calls")) {
+                        return "TOOL_CALL:" + message.path("tool_calls").get(0).toString();
+                    }
+                    return root.path("choices").get(0).path("message").path("content").asText().trim();
+                }
+                return raw;
+            }
+        }
+        throw new RuntimeException("API 请求失败：重试 " + maxRetry + " 次后仍触发限流 429");
+    }
+
+    private String sendRequestOLD(String url, ObjectNode bodyNode) throws Exception {
+        String bodyJson = mapper.writeValueAsString(bodyNode);
         RequestBody body = RequestBody.create(bodyJson, MediaType.parse("application/json; charset=utf-8"));
         
         Request.Builder requestBuilder = new Request.Builder()
@@ -175,6 +218,8 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         }
 
         try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+
+
             String raw = response.body().string();
             if (!response.isSuccessful()) {
                 throw new RuntimeException("API Error: " + response.code() + " - " + raw);
