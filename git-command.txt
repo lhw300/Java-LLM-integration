@@ -20,6 +20,12 @@ git push -u origin main
 
 
 
+纯提交 不污染代码，触发cicd
+git commit --allow-empty -m "trigger ci"
+git push origin main
+
+
+
 git config --global alias.lazy "!git add -A && git commit -m 'quick update' && git push"
 
 

@@ -197,11 +197,11 @@ public class RagTestRunner {
                 "Scenario 4: Negative Boundary"
         };
         RagCase[][] allScenarios2 = {
-             //   scenarioBoundary,
+                scenarioCorrect,
 
         };
         // ── 执行 ──────────────────────────────────────────────────────────────
-        for (int s = 0; s < allScenarios.length; s++) {
+        for (int s = 0; s < allScenarios2.length; s++) {
             runScenario(clientId + "_scenario_" + (s + 1), scenarioNames[s], allScenarios[s]);
         }
 

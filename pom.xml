@@ -226,6 +226,13 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <!-- 产生 lcallai-1.0.jar (主程序包)
+这通常是由 Maven 默认的 maven-jar-plugin 产生的。
+在 pom.xml 中，即使你不显式写这个插件，Maven 也会默认运行它。它的配置通常如下
+    <artifactId>lcallai</artifactId>
+    <version>1.0</version>
+    文件开头规定产生的jar文件名
+                -->
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
@@ -238,6 +245,9 @@
                 </configuration>
             </plugin>
 
+            <!--  产生 lcallai-1.0-lib.jar (依赖库包)
+            这通常是由 maven-assembly-plugin 或者 maven-shade-plugin 产生的。
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -249,15 +259,18 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <!-- 告诉插件：除了生成默认的 JAR 包外，还要额外附带生成一个处理过的 JAR 包。-->
                             <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <!-- 这是关键！它定义了额外 JAR 包的“分类器（Classifier）”名字。Maven 会把它拼接到文件名后面。-->
                             <shadedClassifierName>lib</shadedClassifierName>
 
                             <artifactSet>
+                                <!-- 作用：在打包这个 -lib.jar 时，排除掉你当前项目的代码（假设你的 groupId:artifactId 是 lcallai:lcallai）。-->
                                 <excludes>
                                     <exclude>lcallai:lcallai</exclude>
                                 </excludes>
                             </artifactSet>
-
+                            <!-- 如果一个 JAR 包被重新打包（Shade）但保留了原有的签名信息，Java 运行时会因为签名不匹配而抛出安全异常（SecurityException）。这是打 Fat Jar 时的标准做法-->
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -269,6 +282,10 @@
                                     </excludes>
                                 </filter>
                             </filters>
+
+<!--处理 SPI (Service Provider Interface) 服务发现文件。
+场景：很多库（如数据库驱动、AI 框架）都在 META-INF/services 下有同名文件。如果不加这个，后面打
+包的文件会覆盖前面的。这个转换器会将它们的内容合并在一起，确保所有插件/驱动都能正常工作-->
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

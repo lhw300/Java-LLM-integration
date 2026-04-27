@@ -21,13 +21,29 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+  #这是调用 GitHub 官方提供的缓存插件。它的工作原理是：
+  #Job 结束时：如果满足条件，将指定目录打包上传到 GitHub 的缓存仓库。
+  #Job 开始时：根据“钥匙”寻找是否有匹配的缓存，如果有，直接下载并解压到指定目录
+  #项目长期不维护	7 天后，所有的 Maven 依赖缓存都会被清空。下次运行需全量下载。
+  #频繁修改 pom.xml	会产生大量不同 Key 的缓存，迅速占满 10 GB 额度，导致旧缓存被频繁“驱逐”。
+  #分支合并	main 分支的缓存可以被其他分支共享，但 PR 分支创建的缓存通常在 PR 合并/关闭后很快就会因为不再使用而自然失效。
+
       - name: Cache Maven
+        #使用 actions/cache。这非常聪明，它会把下载过的依赖库（Dependencies）存起来。下次运行时，如果 pom.xml 没变，就不用重新下载，能节省大量时间。
         uses: actions/cache@v4
         with:
+          #指定要缓存的路径 ~/.m2 是 Maven 默认的本地仓库（Local Repository）路径，里面存放着项目所有的 .jar 依赖包（如 Spring, LLM SDK 等）
           path: ~/.m2
+          #这是缓存的唯一标识符（钥匙） 最关键的部分。GitHub 会对项目中所有的 pom.xml 文件内容计算一个哈希值（Hash）如果你改了 pom.xml，哈希值就会变，GitHub 会认为这是一把“新钥匙”，从而重新下载依赖并生成新缓存
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          #这是备用钥匙（兜底方案）。
+          #作用：如果上面的精确钥匙没有找到（比如你刚改了 pom.xml），GitHub 会尝试寻找以 Linux-maven- 开头的最新缓存。
+          #好处：虽然 pom.xml 变了，但大部分旧依赖还是通用的。下载一个旧缓存再补齐少量新依赖，也比从零开始下载全部依赖要快得多。
           restore-keys: ${{ runner.os }}-maven-
 
+        #用一段 Python 脚本动态修改了 pom.xml。
+        #原因：通常是因为某些插件（如 maven-antrun-plugin）在本地环境下执行一些复制文件的操作
+        #（可能是为了本地测试），但在 CI 虚拟服务器环境下，这些路径不存在或会导致冲突。
       - name: Remove local-copy antrun plugin
         run: |
           python3 - <<'EOF'
@@ -46,9 +62,11 @@ jobs:
       - name: Show pom after edit
         run: cat pom.xml | grep -A2 'artifactId'
 
+        #运行 mvn package 生成打包好的文件，同时跳过单元测试（-DskipTests），因为真正的测试在后面的 Job 里。
       - name: Build fat jar
         run: mvn -B package -DskipTests
-
+      #这是关键连接点。它将 target/ 下的 .jar 文件上传到 GitHub 的云端存储，并命名为 lcallai-jar
+      #Upload jar 这个步骤遵循的是 “从运行服务器（Runner）上传到 GitHub 云端临时存储” 的逻辑  90 days
       - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
@@ -128,3 +146,38 @@ jobs:
           java -cp "target/lcallai-1.0.jar:target/lcallai-1.0-lib.jar" \
                com.lcallai.RagTestRunner \
                ${{ github.workspace }}/ci-config
+
+  # ============================================================
+  # Job 4：CD - 部署到 EC2
+  # ============================================================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test-intent, test-rag]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Download jar
+        uses: actions/download-artifact@v4
+        with:
+          name: lcallai-jar
+          path: target/    # ← 下载到 Runner 的 target/ 目录
+
+      - name: Upload jar to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "target/*.jar"
+          target: "/home/call/it9000p/lcall8/cont/lib/"
+          strip_components: 1
+
+      - name: Restart service
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            bash /home/call/it9000p/klc
+            bash /home/call/it9000p/lc2.sh
