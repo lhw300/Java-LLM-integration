@@ -4,14 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1157a1bf-484e-40ea-ae1a-524124cb55e1" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.github/workflows/ci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/git-command.txt" beforeDir="false" afterPath="$PROJECT_DIR$/git-command.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/lcallai/IntentTestRunner.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/lcallai/IntentTestRunner.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/lcallai/RagTestRunner.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/lcallai/RagTestRunner.java" afterDir="false" />
-    </list>
+    <list default="true" id="1157a1bf-484e-40ea-ae1a-524124cb55e1" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
