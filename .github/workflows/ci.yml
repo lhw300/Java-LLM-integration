@@ -180,4 +180,4 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             bash /home/call/it9000p/klc
-            bash /home/call/it9000p/lc2.sh
+            bash /home/call/it9000p/lc2
