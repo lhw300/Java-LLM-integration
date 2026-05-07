@@ -22,7 +22,8 @@
 	import okhttp3.Response;
     import com.lcallai.handler.*;
     import com.lcallai.intent.*;
-
+    import java.util.concurrent.Executors;
+    import java.util.concurrent.ScheduledExecutorService;
 	public class SessionManager {
         private static final Logger logger = LogManager.getLogger(SessionManager.class);
 
@@ -63,6 +64,12 @@
 
       //  public static String LUCENE_PATH = null; //
 	    private static final Map<String, ChatSession> sessions = new ConcurrentHashMap<>();
+        private static final Map<String, Long> lastActiveTime = new ConcurrentHashMap<>();  // ← 加这里
+        private static final ScheduledExecutorService cleaner =                             // ← 加这里
+                Executors.newSingleThreadScheduledExecutor();
+
+
+
 	    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	   // private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 	    private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -437,10 +444,20 @@
 
 
                 // 装配时传入
-                IntentClassifier intentClassifier = new IntentClassifier(
+/*                IntentClassifier intentClassifier = new IntentClassifier(
                         ACTIVE_ROUTER.rewriter(),
                         globalClassifyPrompt
-                );
+                );*/
+                IntentClassifier intentClassifier;
+                if ("simple".equalsIgnoreCase(G_QUERY_MODE)) {
+                    // Simple mode: skip LLM intent classification entirely
+                    intentClassifier = new SimpleIntentClassifier();
+                    logger.debug("SimpleIntentClassifier activated — all input treated as QUERY");
+                } else {
+                    intentClassifier = new IntentClassifier(ACTIVE_ROUTER.rewriter(), globalClassifyPrompt);
+                }
+
+                ACTIVE_INTENT_CLASSIFIER = intentClassifier;
 
 
                 IntentDispatcher intentDispatcher = new IntentDispatcher()
@@ -452,10 +469,10 @@
                         .register(IntentResult.Intent.GREETING, new GreetingHandler())
                         .register(IntentResult.Intent.CHITCHAT, new ChitchatHandler(globalChitchatPrompt));
 
-                ACTIVE_INTENT_CLASSIFIER = intentClassifier;
+
                 ACTIVE_INTENT_DISPATCHER = intentDispatcher;
 
-
+                startAutoCleanup();
             } catch (Exception e) {
 
                 logger.error("❌ [System Init] 初始化失败！");
@@ -521,10 +538,32 @@
                 sessions.put(clientId, session);
                 logger.debug("为客户端 [ sn=" + clientId + "] 创建了新会话，并已注入全局 Prompt 和知识库引用。");
             }
+            lastActiveTime.put(clientId, System.currentTimeMillis());
             return session;
         }
- 
-	    public static   String sendToOpenAI(ChatHistory history) throws Exception {
+        public static void startAutoCleanup() {
+            cleaner.scheduleAtFixedRate(
+                    SessionManager::cleanExpiredSessions,
+                    5, 5, TimeUnit.MINUTES
+            );
+        }
+        private static void cleanExpiredSessions() {
+            long now = System.currentTimeMillis();
+            long timeoutMs = 30 * 60 * 1000L;
+
+            for (String clientId : sessions.keySet()) {
+                Long lastActive = lastActiveTime.get(clientId);
+                if (lastActive == null) continue;
+
+                if (now - lastActive > timeoutMs) {
+                    removeSession(clientId);
+                    lastActiveTime.remove(clientId);
+                    logger.info("⏰ 会话 [{}] 超时30分钟，已自动销毁", clientId);
+                }
+            }
+        }
+
+        public static   String sendToOpenAI(ChatHistory history) throws Exception {
 	        // 创建请求 JSON
 	        ObjectNode rootNode = MAPPER.createObjectNode();
 	        rootNode.put("model", "gpt-4o-mini");

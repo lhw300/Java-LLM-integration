@@ -30,7 +30,7 @@ public class OpenAIClient implements LlmClient, EmbeddingClient {
         root.put("model", this.chatModel);
         root.put("temperature", 0.0);
         root.set("messages", messages);
-
+        logger.debug("✅ 发送sendRequest...https://api.openai.com/v1/chat/completions"+" \r\n"+root.toString());
         return sendRequest("https://api.openai.com/v1/chat/completions", root);
     }
 
@@ -66,7 +66,7 @@ public class OpenAIClient implements LlmClient, EmbeddingClient {
         String bodyJson2 = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(bodyNode);
         
         // 现在这里打印出来的就是易读的格式了
-        logger.debug("🤖 [openAI] 发送本地请求: \n" + bodyJson2);
+       // logger.debug("🤖 [openAI] 发送本地请求: \n" + bodyJson2);
         
         RequestBody body = RequestBody.create(mapper.writeValueAsString(bodyNode), MediaType.parse("application/json"));
         Request request = new Request.Builder()

@@ -19,18 +19,17 @@ public class QueryHandler implements IntentHandler {
 
 
     @Override
+
     public ChatAnswer handle(String rawText, IntentResult result, ChatSession session) {
         logger.debug("[QueryHandler] refinedQuery=" + result.refinedQuery);
 
-        // category 为 null，直接把 refined_query（反问句）作为回答返回，不走 RAG
-/*        if (session.getCurrentCategory() == null) {
-            return new ChatAnswer(0, result.refinedQuery, result);
-        }*/
-        // category 为 null，身份未知，返回固定反问句，不走 RAG
-        //TODO 配置化
-        if (session.getCurrentCategory() == null) {
-            return new ChatAnswer(0, "请问您是老师、学生还是管理员呢？", result);
+        // In simple mode (no category needed), skip the category check
+        if (!"simple".equalsIgnoreCase(session.getQueryMode())) {
+            if (session.getCurrentCategory() == null) {
+                return new ChatAnswer(0, "请问您是老师、学生还是管理员呢？", result);
+            }
         }
-        return session.askByQueryMode(result.refinedQuery ,false);
+
+        return session.askByQueryMode(result.refinedQuery, false);
     }
 }

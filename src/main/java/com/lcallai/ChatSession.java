@@ -347,16 +347,18 @@ public class ChatSession {
             history.addMessage("assistant", ca.answer);
             history.trim(MAX_HISTORY);
         }
+
         return ca;
     }
 
-    public ChatAnswer askByQueryMode(String text,boolean isrewrite) {
-        if("fullText".equalsIgnoreCase(queryMode)){
-
-            return askFullContext(text,isrewrite);
-        }else //"retrieveOnly".equalsIgnoreCase(queryMode)   or   retrieveRerank
-            return askRerank(text,isrewrite);
-
+    public ChatAnswer askByQueryMode(String text, boolean isrewrite) {
+        if ("fullText".equalsIgnoreCase(queryMode)) {
+            return askFullContext(text, isrewrite);
+        } else if ("simple".equalsIgnoreCase(queryMode)) {  // ← add this
+            return askSimple(text);
+        } else {
+            return askRerank(text, isrewrite);
+        }
     }
     /*
     public ChatAnswer askIntent(String userQuery) {
@@ -717,8 +719,8 @@ public class ChatSession {
         //logger.debug(jsonPayload);
         // pretty print
         ObjectMapper mapper = new ObjectMapper();
-        logger.debug(mapper.writerWithDefaultPrettyPrinter()
-                .writeValueAsString(history.toJsonArray()));
+      //  logger.debug(mapper.writerWithDefaultPrettyPrinter()
+              //  .writeValueAsString(history.toJsonArray()));
 
 // 执行 chat
         String answer = router.finalLlm().chat(history.toJsonArray());
@@ -1112,6 +1114,31 @@ public class ChatSession {
             return "";
         }
     }
+    public ChatAnswer askSimple(String text) {
+        logger.debug(sinfo + "[askSimple] text=" + text);
+        ChatAnswer ca = new ChatAnswer(-1, null);
+
+        if (fulltext == null || fulltext.trim().length() < 10) {
+            ca.code = -404; ca.answer = "Knowledge base is empty"; return ca;
+        }
+
+        try {
+            // Do NOT add user message here — ask() already added it
+            String ans = executeFinalChat(fulltext, "");
+
+            if (ans != null && !ans.isEmpty()) {
+                // Do NOT add assistant message here — ask() already handles it
+                ca.code = 0;
+                ca.answer = ans;
+            } else {
+                ca.code = -500; ca.answer = "Empty response from AI";
+            }
+        } catch (Exception e) {
+            logger.error("[askSimple] exception", e);
+            ca.code = -1; ca.answer = "System error: " + e.getMessage();
+        }
+        return ca;
+    }
     public ModelRouter getRouter(){
         return router;
     }
@@ -1188,4 +1215,5 @@ public class ChatSession {
     public String getPendingQuery() { return pendingQuery; }
     public void clearPendingQuery() { this.pendingQuery = null; }
     public void setCurrentCategory(String category) { this.currentCategory = category; }
+    public String getQueryMode() { return queryMode; }
 }

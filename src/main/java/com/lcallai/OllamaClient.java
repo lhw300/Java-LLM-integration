@@ -40,6 +40,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
     }
     @Override
     public String chat(ArrayNode messages) throws Exception {
+
         ObjectNode root = mapper.createObjectNode();
         root.put("model", this.chatModel);
         root.put("temperature", 0.0);
@@ -101,7 +102,7 @@ public class OllamaClient implements LlmClient, EmbeddingClient {
         	// 直接解析成 JsonNode 并注入 root
         	//root.set("tools", mapper.readTree(toolsJson));
 
-        //	 logger.debug("✅ 发送sendRequest..."+root.toString());
+         	 logger.debug("✅ 发送sendRequest..."+baseUrl + "/chat/completions"+" \r\n"+root.toString());
         String res= sendRequest(baseUrl + "/chat/completions", root);
        // logger.debug("✅ 收到应答   res="+res);
         return res;

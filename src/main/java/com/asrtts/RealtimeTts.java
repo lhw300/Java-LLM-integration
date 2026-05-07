@@ -21,8 +21,8 @@ import org.apache.logging.log4j.Logger;
 
 	        final String model = "gpt-realtime"; // 或 gpt-realtime-mini
 	       // final String       text="您好，我暂时没有听到您的声音。请直接说出您的问题";
-	        final String  text="Welcome! I'm your virtual assistant. How may I assist you?";
-
+	        //  String  text="Welcome! I'm your virtual assistant. How may I assist you?";
+            final String text="Thank you for calling . Have a great day!";
 	        OkHttpClient client = new OkHttpClient.Builder()
 	                .readTimeout(0, TimeUnit.MILLISECONDS)
 	                .build();
